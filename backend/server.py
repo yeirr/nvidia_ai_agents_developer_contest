@@ -1,10 +1,9 @@
-import functools
 import json
 import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Dict, TypedDict
 
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -152,7 +151,7 @@ leader_prompt = PromptTemplate(
     input_variables=["messages"],
 )
 
-leader_node = create_agent(llm=agent, tools=[], system_message=leader_prompt.template)
+leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.template)
 
 
 # Researcher node.
@@ -163,7 +162,7 @@ researcher_prompt = PromptTemplate(
     input_variables=["messages"],
 )
 
-researcher_node = create_agent(
+researcher_agent = create_agent(
     llm=agent, tools=[], system_message=researcher_prompt.template
 )
 
@@ -177,7 +176,7 @@ programmer_prompt = PromptTemplate(
     input_variables=["messages"],
 )
 
-programmer_node = create_agent(
+programmer_agent = create_agent(
     llm=agent, tools=[], system_message=programmer_prompt.template
 )
 
@@ -187,30 +186,30 @@ class GraphState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def call_leader_node(state: GraphState):
+def call_leader_node(state: GraphState) -> Dict[str, Any]:
     messages = state["messages"]
     print(f"LEADER_NODE: {messages}")
-    response = leader_node.invoke(
+    response = leader_agent.invoke(
         {"messages": [HumanMessage(content=messages[-1].content)]}
     )
     print(f"LEADER_RESPONSE: {response}")
     return {"messages": [response]}
 
 
-def call_researcher_node(state: GraphState):
+def call_researcher_node(state: GraphState) -> Dict[str, Any]:
     messages = state["messages"]
     print(f"RESEARCHER_NODE: {messages}")
-    response = researcher_node.invoke(
+    response = researcher_agent.invoke(
         {"messages": [HumanMessage(content=messages[0].content)]}
     )
     print(f"RESEARCHER_RESPONSE: {response}")
     return {"messages": [response]}
 
 
-def call_programmer_node(state: GraphState):
+def call_programmer_node(state: GraphState) -> Dict[str, Any]:
     messages = state["messages"]
     print(f"PROGRAMMER_NODE: {messages}")
-    response = programmer_node.invoke(
+    response = programmer_agent.invoke(
         {"messages": [HumanMessage(content=messages[0].content)]}
     )
     print(f"PROGRAMMER_RESPONSE: {response}")
@@ -304,6 +303,7 @@ async def generate(thread_id: str, query: str) -> ORJSONResponse:
 
     content = {
         "api_message": "LLM inference successful.",
-        "llm_message": result["messages"][-1].content,
+        "human_message": query,
+        "ai_message": result["messages"][-1].content,
     }
     return ORJSONResponse(content=content, status_code=status.HTTP_200_OK)
