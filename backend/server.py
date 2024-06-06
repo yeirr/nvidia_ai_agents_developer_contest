@@ -1,17 +1,19 @@
 import functools
 import json
-import operator
+import re
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, List, TypedDict
+from typing import Annotated, Any, TypedDict
 
+from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 from IPython.display import Image, display
-from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.globals import set_debug, set_verbose
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
+from langchain_core.messages import HumanMessage
 from langchain_core.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder,
@@ -21,6 +23,60 @@ from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
+from starlette.middleware import Middleware
+from starlette_context import plugins
+from starlette_context.middleware import RawContextMiddleware
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> Any:
+    """Define logic using ASGI lifespan protocol on application events."""
+    # Run startup operations.
+    yield
+    # Run clean up operations.
+
+
+# Define list of routes.
+origins = [
+    # For development and quickfix.
+    "http://localhost:8000",
+]
+# For daily builds and staging.
+origin_regex = re.compile(
+    r"(^https:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.(carrd.co|web.app|firebaseapp.com|a.run.app){1,}\b$)"
+)
+
+middleware: list[Middleware] = [
+    # Generate, tag or read request ID for each incoming request.
+    Middleware(
+        RawContextMiddleware,
+        plugins=(plugins.RequestIdPlugin(),),
+    ),
+    # Cross-origin resource sharing configurations.
+    Middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_origin_regex=origin_regex,
+        # Origins must be specified if True.
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
+        allow_headers=["*"],
+        expose_headers=[],
+    ),
+]
+
+app = FastAPI(
+    title="ASGI web server",
+    description="HTTP server for langgraph and nvidia NIM integration",
+    swagger_ui_parameters={
+        "tryItOutEnabled": True,
+        "displayRequestDuration": True,
+        "requestSnippetsEnabled": True,
+    },
+    version="v1alpha",
+    middleware=middleware,
+    lifespan=lifespan,
+)
 
 set_debug(False)
 set_verbose(True)
@@ -187,6 +243,7 @@ def route_query(state: GraphState):
         return "FINISH"
 
 
+# Compile workflow graph.
 workflow = StateGraph(GraphState)
 workflow.add_node("leader", call_leader_node)
 workflow.add_node("researcher", call_researcher_node)
@@ -207,54 +264,46 @@ workflow.add_edge("researcher", END)
 workflow.add_edge("programmer", END)
 graph = workflow.compile()
 
-# Sanity checks by visualizing graph and running inference.
+# Sanity checks by visualizing graph and running warmup inference.
 display(
     Image(
         graph.get_graph(xray=False).draw_mermaid_png(
-            output_file_path="/tmp/langgraph.png"
+            output_file_path="/tmp/llm_workflow.png"
         )
     )
 )
-print(
-    graph.invoke(
-        {
-            "messages": [
-                HumanMessage(content="is trump going to jail?"),
-            ]
-        },
-        {"recursion_limit": 150},
-    )["messages"][-1].content
+graph.invoke(
+    {
+        "messages": [
+            HumanMessage(content="is trump going to jail?"),
+        ]
+    },
+    {"recursion_limit": 150},
+)["messages"][-1].content
+
+
+@app.post(
+    "/generate",
+    tags=["generate"],
+    summary="Text inference endpoint",
+    deprecated=False,
+    status_code=status.HTTP_200_OK,
 )
-
-
-# Unique id to keep track of message threads during single session agent loop.
-async def main():
+async def generate(thread_id: str, query: str) -> ORJSONResponse:
+    # Unique id to keep track of message threads during single session agent loop.
     thread_id = str(uuid.uuid4())
     config = {
         "configurable": {"uid": "123456", "thread_id": thread_id},
     }
-    while True:
-        user = input("User (q/Q to quit): ")
-        if user in {"q", "Q"}:
-            print("AI: Byebye")
-            break
-        for output in graph.stream(
-            {
-                "messages": [HumanMessage(content=user)],
-            },
-            config=config,
-        ):
-            if "__end__" in output:
-                continue
-            # stream() yields dictionaries with output keyed by node name
-            for key, value in output.items():
-                print(f"Output from node '{key}':")
-                print("---")
-                print(value)
-            print("\n---\n")
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content=query)],
+        },
+        config=config,
+    )
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())
+    content = {
+        "api_message": "LLM inference successful.",
+        "llm_message": result["messages"][-1].content,
+    }
+    return ORJSONResponse(content=content, status_code=status.HTTP_200_OK)
