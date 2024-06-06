@@ -180,7 +180,7 @@ terminado==0.18.1
 tiktoken==0.7.0
 toml==0.10.2
 tomli==2.0.1
-tornado==6.4
+tornado==6.4.1
 tox==4.15.0
 tqdm==4.66.4
 traitlets==5.14.3
