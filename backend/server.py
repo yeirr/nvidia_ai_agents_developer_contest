@@ -2,8 +2,9 @@ import json
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List
+from typing import Annotated, Any, Dict, List, Literal
 
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,11 +21,13 @@ from langchain_core.prompts import (
 )
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import tool
 from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
+from langgraph.prebuilt import ToolNode
 from starlette.middleware import Middleware
 from starlette_context import plugins
 from starlette_context.middleware import RawContextMiddleware
@@ -106,6 +109,16 @@ tavily_tool = TavilySearchResults(api_wrapper=tavily_api, max_results=3)
 python_repl_tool = PythonREPLTool()
 
 
+@tool
+def web_search(query: str) -> List[str]:
+    """Placeholder for implementation."""
+    return ["The weather is cloudy with a chance of meatballs."]
+
+
+tools = [web_search]
+tools_node = ToolNode(tools)
+
+
 # Supported models on NGC NIM endpoint.
 # Text
 # * "meta/llama3-8b-instruct"
@@ -118,7 +131,7 @@ agent = ChatOpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     model=model,
     temperature=0.1,
-    max_tokens=64,
+    max_tokens=32,
     api_key=Path("/home/yeirr/secret/ngc_personal_key.txt").read_text().strip("\n"),
 )
 
@@ -147,8 +160,8 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 
 # Leader node.
 leader_prompt = PromptTemplate(
-    template="""You are an expert at routing a 
-    user query to a researcher or programmer. Use the researcher for generic queries and programmer for programming queries.
+    template="""You are an expert at routing a user query to a specialist.
+    Use the researcher for generic queries and programmer for programming queries.
     Give a binary choice 'researcher' or 'programmer' based on the query. Return the a JSON with a single key 'specialist' and 
     no premable or explanation. Query to route: {messages} """,
     input_variables=["messages"],
@@ -161,12 +174,13 @@ leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.te
 researcher_prompt = PromptTemplate(
     template="""You are an expert researcher in finding articles, news and the
     latest information pertaining to the following:
-    {messages}""",
+    {messages}
+    """,
     input_variables=["messages"],
 )
 
 researcher_agent = create_agent(
-    llm=agent, tools=[], system_message=researcher_prompt.template
+    llm=agent, tools=tools, system_message=researcher_prompt.template
 )
 
 # Programming node.
@@ -175,7 +189,8 @@ researcher_agent = create_agent(
 programmer_prompt = PromptTemplate(
     template="""You are an expert programmer who excels in solving programming problems
     pertaining to the following: 
-    {messages}""",
+    {messages}
+    """,
     input_variables=["messages"],
 )
 
@@ -189,31 +204,55 @@ class GraphState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
+# Define the function that determines whether to continue or not.
+def should_continue(state: GraphState) -> Literal["continue", "FINISH"]:
+    last_message = state.messages[-1]
+    # If there is no function call, then we finish.
+    if not last_message.tool_calls:
+        return "FINISH"
+    # Otherwise if there is, we continue.
+    else:
+        return "continue"
+
+
 def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     messages = state.messages
-    print(f"LEADER_NODE: {messages}")
-    response = leader_agent.invoke(
-        {"messages": [HumanMessage(content=messages[-1].content)]}
-    )
-    print(f"LEADER_RESPONSE: {response}")
-    return {"messages": [response]}
+    # New messages list.
+    if len(messages) < 2:
+        last_human_message = messages[0].content
+        print(f"LEADER_NODE_INPUT_NEW: {last_human_message}")
+        response = leader_agent.invoke(
+            {"messages": [HumanMessage(content=last_human_message)]}
+        )
+        print(f"LEADER_RESPONSE: {response}")
+        return {"messages": [response]}
+    else:
+        last_human_message = messages[-1].content
+        print(f"LEADER_NODE_INPUT_EXISTING: {last_human_message}")
+        response = leader_agent.invoke(
+            {"messages": [HumanMessage(content=last_human_message)]}
+        )
+        print(f"LEADER_RESPONSE: {response}")
+        return {"messages": [response]}
 
 
 def call_researcher_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     messages = state.messages
-    print(f"RESEARCHER_NODE: {messages}")
+    last_human_message = messages[-2].content
+    print(f"RESEARCHER_NODE_INPUT: {last_human_message}")
     response = researcher_agent.invoke(
-        {"messages": [HumanMessage(content=messages[0].content)]}
+        {"messages": [HumanMessage(content=last_human_message)]}
     )
-    print(f"RESEARCHER_RESPONSE: {response}")
+    print(f"RESEARCHER_RESPONSE: {response.content}")
     return {"messages": [response]}
 
 
 def call_programmer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     messages = state.messages
-    print(f"PROGRAMMER_NODE: {messages}")
+    last_human_message = messages[-2].content
+    print(f"PROGRAMMER_NODE_INPUT: {last_human_message}")
     response = programmer_agent.invoke(
-        {"messages": [HumanMessage(content=messages[0].content)]}
+        {"messages": [HumanMessage(content=last_human_message)]}
     )
     print(f"PROGRAMMER_RESPONSE: {response}")
     # We return a list, because this will get added to the existing list
@@ -248,6 +287,7 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
 
 # Compile workflow graph.
 workflow = StateGraph(GraphState)
+workflow.add_node("action", tools_node)
 workflow.add_node("leader", call_leader_node)
 workflow.add_node("researcher", call_researcher_node)
 workflow.add_node("programmer", call_programmer_node)
@@ -263,7 +303,10 @@ workflow.add_conditional_edges(
         "programmer": "programmer",
     },
 )
-workflow.add_edge("researcher", END)
+workflow.add_conditional_edges(
+    "researcher", should_continue, {"continue": "action", "FINISH": END}
+)
+workflow.add_edge("action", "researcher")
 workflow.add_edge("programmer", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
@@ -286,14 +329,17 @@ print(
     graph.invoke(
         {
             "messages": [
-                HumanMessage(
-                    content="code hello world in python and print to terminal"
-                ),
+                HumanMessage(content="who is michelle obama"),
             ]
         },
         config=config,
     )["messages"][-1].content
 )
+# Record and parse thread creation isoformat to utc timestamp.
+thread_isoformat = graph.get_state(
+    {"configurable": {"thread_id": thread_id}}
+).created_at
+thread_timestamp_utc = datetime.fromisoformat(thread_isoformat).timestamp()
 
 
 @app.post(
