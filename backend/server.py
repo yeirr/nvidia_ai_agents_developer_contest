@@ -22,6 +22,7 @@ from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.runnables.config import RunnableConfig
 from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 from starlette.middleware import Middleware
@@ -264,7 +265,8 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("researcher", END)
 workflow.add_edge("programmer", END)
-graph = workflow.compile()
+checkpointer = MemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
 
 # Sanity checks by visualizing graph(with nested structures) and running warmup inference.
 display(
@@ -274,6 +276,12 @@ display(
         )
     )
 )
+uid = str(uuid.uuid4())
+thread_id = str(uuid.uuid4())
+config: RunnableConfig = {
+    "recursion_limit": 150,
+    "configurable": {"thread_id": thread_id, "uid": uid},  # runtime values
+}
 print(
     graph.invoke(
         {
@@ -283,10 +291,7 @@ print(
                 ),
             ]
         },
-        config={
-            "recursion_limit": 150,
-            "metadata": {"thread_id": str(uuid.uuid4())},
-        },
+        config=config,
     )["messages"][-1].content
 )
 
