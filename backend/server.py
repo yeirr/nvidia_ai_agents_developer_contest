@@ -3,7 +3,7 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, Dict, TypedDict
+from typing import Annotated, Any, Dict, List
 
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +18,8 @@ from langchain_core.prompts import (
     MessagesPlaceholder,
     PromptTemplate,
 )
+from langchain_core.pydantic_v1 import BaseModel
+from langchain_core.runnables.config import RunnableConfig
 from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
@@ -115,12 +117,12 @@ agent = ChatOpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     model=model,
     temperature=0.1,
-    max_tokens=128,
+    max_tokens=64,
     api_key=Path("/home/yeirr/secret/ngc_personal_key.txt").read_text().strip("\n"),
 )
 
 
-def create_agent(llm: ChatOpenAI, tools, system_message: str):
+def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
     """Create an agent."""
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -182,12 +184,12 @@ programmer_agent = create_agent(
 
 
 # The graph state is the input to each node in the graph.
-class GraphState(TypedDict):
+class GraphState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def call_leader_node(state: GraphState) -> Dict[str, Any]:
-    messages = state["messages"]
+def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    messages = state.messages
     print(f"LEADER_NODE: {messages}")
     response = leader_agent.invoke(
         {"messages": [HumanMessage(content=messages[-1].content)]}
@@ -196,8 +198,8 @@ def call_leader_node(state: GraphState) -> Dict[str, Any]:
     return {"messages": [response]}
 
 
-def call_researcher_node(state: GraphState) -> Dict[str, Any]:
-    messages = state["messages"]
+def call_researcher_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    messages = state.messages
     print(f"RESEARCHER_NODE: {messages}")
     response = researcher_agent.invoke(
         {"messages": [HumanMessage(content=messages[0].content)]}
@@ -206,8 +208,8 @@ def call_researcher_node(state: GraphState) -> Dict[str, Any]:
     return {"messages": [response]}
 
 
-def call_programmer_node(state: GraphState) -> Dict[str, Any]:
-    messages = state["messages"]
+def call_programmer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    messages = state.messages
     print(f"PROGRAMMER_NODE: {messages}")
     response = programmer_agent.invoke(
         {"messages": [HumanMessage(content=messages[0].content)]}
@@ -218,7 +220,7 @@ def call_programmer_node(state: GraphState) -> Dict[str, Any]:
 
 
 # Define nodes
-def route_query(state: GraphState):
+def route_query(state: GraphState, config: RunnableConfig) -> str:
     """
     Route query to specialists.
 
@@ -230,8 +232,9 @@ def route_query(state: GraphState):
     """
 
     print("---ROUTE QUERY---")
-    messages = state["messages"]
-    route = json.loads(messages[-1].content)
+    messages = state.messages
+    last_message = str(messages[-1].content)  # Target AIMessage
+    route = json.loads(last_message)
     if route["specialist"] == "researcher":
         print("---ROUTE QUERY TO RESEARCHER---")
         return "researcher"
@@ -263,22 +266,27 @@ workflow.add_edge("researcher", END)
 workflow.add_edge("programmer", END)
 graph = workflow.compile()
 
-# Sanity checks by visualizing graph and running warmup inference.
+# Sanity checks by visualizing graph(with nested structures) and running warmup inference.
 display(
     Image(
-        graph.get_graph(xray=False).draw_mermaid_png(
+        graph.get_graph(xray=True).draw_mermaid_png(
             output_file_path="/tmp/llm_workflow.png"
         )
     )
 )
-graph.invoke(
-    {
-        "messages": [
-            HumanMessage(content="is trump going to jail?"),
-        ]
-    },
-    {"recursion_limit": 150},
-)["messages"][-1].content
+print(
+    graph.invoke(
+        {
+            "messages": [
+                HumanMessage(content="is trump going to jail?"),
+            ]
+        },
+        config={
+            "recursion_limit": 150,
+            "configurable": {"thread_id": str(uuid.uuid4())},
+        },
+    )["messages"][-1].content
+)
 
 
 @app.post(
