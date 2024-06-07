@@ -146,10 +146,10 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 
 # Leader node.
 leader_prompt = PromptTemplate(
-    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|> You are an expert at routing a 
+    template="""You are an expert at routing a 
     user query to a researcher or programmer. Use the researcher for generic queries and programmer for programming queries.
     Give a binary choice 'researcher' or 'programmer' based on the query. Return the a JSON with a single key 'specialist' and 
-    no premable or explanation. Query to route: {messages} <|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    no premable or explanation. Query to route: {messages} """,
     input_variables=["messages"],
 )
 
@@ -158,9 +158,9 @@ leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.te
 
 # Researcher node.
 researcher_prompt = PromptTemplate(
-    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-    You are an expert in web researcher.<|eot_id|><|start_header_id|>user<|end_header_id|>
-    {messages}<|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    template="""You are an expert researcher in finding articles, news and the
+    latest information pertaining to the following:
+    {messages}""",
     input_variables=["messages"],
 )
 
@@ -172,9 +172,9 @@ researcher_agent = create_agent(
 #
 # THIS PERFORMS ARBITRARY CODE EXECUTION. PROCEED WITH CAUTION.
 programmer_prompt = PromptTemplate(
-    template="""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-    You are an expert programmer who excels in solving programming problems.<|eot_id|><|start_header_id|>user<|end_header_id|>
-    {messages}<|eot_id|><|start_header_id|>assistant<|end_header_id|>""",
+    template="""You are an expert programmer who excels in solving programming problems
+    pertaining to the following: 
+    {messages}""",
     input_variables=["messages"],
 )
 
@@ -278,12 +278,14 @@ print(
     graph.invoke(
         {
             "messages": [
-                HumanMessage(content="is trump going to jail?"),
+                HumanMessage(
+                    content="code hello world in python and print to terminal"
+                ),
             ]
         },
         config={
             "recursion_limit": 150,
-            "configurable": {"thread_id": str(uuid.uuid4())},
+            "metadata": {"thread_id": str(uuid.uuid4())},
         },
     )["messages"][-1].content
 )
