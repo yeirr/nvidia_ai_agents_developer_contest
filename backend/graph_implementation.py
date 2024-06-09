@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Union
 
 from IPython.display import Image, display
 from langchain.globals import set_debug, set_verbose
@@ -97,12 +97,21 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 leader_prompt = PromptTemplate(
     template="""You are an expert at routing a user query to an action.
     Use websearch for generic queries.
-    Give a binary choice 'action' or 'FINISH' based on the query. Return the a JSON with a single key 'action' and
+    Give a list of choices 'action', 'FINISH' or safety based on the query. Return the a JSON with a single key 'action' and
     no premable or explanation. Query to route: {messages} """,
     input_variables=["messages"],
 )
 
 leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.template)
+
+safety_prompt = PromptTemplate(
+    template="""You are a honest and safety expert who redacts any offensive content with [REDACTED].
+    Do not include any commentary.
+    You help summarize the following: \n{messages}""",
+    input_variables=["messages"],
+)
+
+safety_agent = create_agent(llm=agent, tools=[], system_message=safety_prompt.template)
 
 
 # Researcher node.
@@ -140,19 +149,30 @@ class GraphState(BaseModel):
 
 
 def call_tools_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
-    messages = state.messages
-    last_human_message = messages[-2].content
-    print(f"TOOL_WEBSEARCH_INPUT: {last_human_message}")
-    response = tavily_tool.invoke(
-        last_human_message,
-        max_tokens=1024,
-        search_depth="advanced",
-    )[0]["content"]
-    print(f"TOOL_WEBSEARCH_RESPONSE: {response}")
-    return {"messages": [ToolMessage(content=response, tool_call_id=str(uuid.uuid4()))]}
+    try:
+        messages = state.messages
+        last_human_message = str(messages[-2].content)
+        print(f"TOOL_WEBSEARCH_INPUT: {last_human_message}")
+        response = tavily_tool.invoke(
+            last_human_message,
+            max_tokens=1024,
+            search_depth="advanced",
+        )[0]["content"]
+        print(f"TOOL_WEBSEARCH_RESPONSE: {response}")
+        return {
+            "messages": [ToolMessage(content=response, tool_call_id=str(uuid.uuid4()))]
+        }
+    except ToolException:
+        return {
+            "messages": [
+                ToolMessage(content="Tool exception.", tool_call_id=str(uuid.uuid4()))
+            ]
+        }
 
 
-def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+def call_leader_node(
+    state: GraphState, config: RunnableConfig
+) -> Union[Dict[str, Any], str]:
     messages = state.messages
     # New messages list.
     if len(messages) < 2:
@@ -165,12 +185,23 @@ def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any
         return {"messages": [response]}
     else:
         last_human_message = messages[-2].content
-        print(f"LEADER_NODE_INPUT_EXISTING: {last_human_message}")
-        response = leader_agent.invoke(
-            {"messages": [HumanMessage(content=last_human_message)]}
-        )
-        print(f"LEADER_RESPONSE: {response}")
-        return {"messages": [response]}
+        if json.loads(last_human_message)["action"] == "websearch":
+            return {"messages": [AIMessage(content='{"action": "safety"}')]}
+        else:
+            print(f"LEADER_NODE_INPUT_EXISTING: {last_human_message}")
+            response = leader_agent.invoke(
+                {"messages": [HumanMessage(content=last_human_message)]}
+            )
+            print(f"LEADER_RESPONSE: {response}")
+            return {"messages": [response]}
+
+
+def call_safety_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    messages = state.messages
+    print(f"SAFETY_MESSAGE: {messages}")
+    query = str(messages[-2].content) + "\n" + str(messages[-3].content)
+    response = safety_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_researcher_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
@@ -252,6 +283,8 @@ def should_action(state: GraphState, config: RunnableConfig) -> str:
     if route["action"] == "websearch":
         print("---ROUTE QUERY to ACTION---")
         return "action"
+    elif route["action"] == "safety":
+        return "safety"
     else:
         return "FINISH"
 
@@ -260,16 +293,17 @@ def should_action(state: GraphState, config: RunnableConfig) -> str:
 workflow = StateGraph(GraphState)
 workflow.add_node("action", call_tools_node)
 workflow.add_node("leader", call_leader_node)
+workflow.add_node("safety", call_safety_node)
 # workflow.add_node("researcher", call_researcher_node)
 # workflow.add_node("programmer", call_programmer_node)
 
 # Build graph.
 workflow.set_entry_point("leader")
 workflow.add_conditional_edges(
-    "leader", should_action, {"action": "action", "FINISH": END}
+    "leader", should_action, {"action": "action", "safety": "safety"}
 )
 workflow.add_edge("action", "leader")
-# workflow.add_edge("programmer", END)
+workflow.add_edge("safety", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
@@ -288,7 +322,7 @@ config: RunnableConfig = {
     "configurable": {"thread_id": thread_id, "uid": uid},  # runtime values
 }
 for event in graph.stream(
-    {"messages": [HumanMessage(content="who is michelle obama?")]},
+    {"messages": [HumanMessage(content="who is marilyn monroe?")]},
     config,
     stream_mode="values",
 ):
