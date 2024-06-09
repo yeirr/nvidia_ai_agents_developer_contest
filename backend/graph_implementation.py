@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from IPython.display import Image, display
+from langchain.globals import set_debug, set_verbose
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder,
@@ -15,17 +16,20 @@ from langchain_core.prompts import (
 )
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.tools import tool
+from langchain_core.tools import ToolException, tool
 from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-from langgraph.prebuilt import ToolNode
+
+set_debug(False)
+set_verbose(True)
 
 # Done: vanilla langgraph react agent
+# TODO: tools node with collection of tools
 # TODO: main langgraph agent loop(retrieval, reflection, human-in-the-loop)
-# TODO: specialized multi-agents(websearch,math,sci,law,biz)
+# TODO: specialized multi-agents(math,sci,law,biz)
 # TODO: combination of SLMs(phi3-mini-4k), LLMs(llama3-8b), LMMs(llama3-70b)
 #
 # Accelerate multi-step problem-solving with a single generalist and multiple specialists.
@@ -42,33 +46,25 @@ tavily_api = TavilySearchAPIWrapper(
     )
     .strip(),
 )
-tavily_tool = TavilySearchResults(api_wrapper=tavily_api, max_results=3)
+tavily_tool = TavilySearchResults(api_wrapper=tavily_api, max_results=1)
 python_repl_tool = PythonREPLTool()
 
-
-@tool
-def web_search(query: str) -> List[str]:
-    """Placeholder for implementation."""
-    return ["The weather is cloudy with a chance of meatballs."]
-
-
-tools = [web_search]
-tools_node = ToolNode(tools)
+tools = [tavily_tool]
 
 
 # Supported models on NGC NIM endpoint.
 # Text
 # * "meta/llama3-8b-instruct"
 # * "meta/llama3-70b-instruct"
-# * "mistralai/mistral-large"
+# * "mistralai/mistral-large" supports tool call
 # * "mistralai/mixtral-8x7b-instruct-v0.1"
-# * "mistralai/mixtral-8x22b-instruct-v0.1"
+# * "mistralai/mixtral-8x22b-instruct-v0.1" supports tool call
 model = "meta/llama3-70b-instruct"
 agent = ChatOpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     model=model,
     temperature=0.1,
-    max_tokens=32,
+    max_tokens=1024,
     api_key=Path("/home/yeirr/secret/ngc_personal_key.txt").read_text().strip("\n"),
 )
 
@@ -79,13 +75,15 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
         [
             (
                 "system",
+                "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
                 "You are a helpful AI assistant, collaborating with other assistants."
                 " Use the provided tools to progress towards answering the question."
                 " If you are unable to fully answer, that's OK, another assistant with different tools "
                 " will help where you left off. Execute what you can to make progress."
                 " If you or any of the other assistants have the final answer or deliverable,"
                 " prefix your response with FINAL ANSWER so the team knows to stop."
-                " You have access to the following tools: {tool_names}.\n{system_message}",
+                " You have access to the following tools: {tool_names}.\n{system_message}"
+                "<|eot_id|><|start_header_id|>user<|end_header_id|>",
             ),
             MessagesPlaceholder(variable_name="messages"),
         ]
@@ -97,9 +95,9 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 
 # Leader node.
 leader_prompt = PromptTemplate(
-    template="""You are an expert at routing a user query to a specialist.
-    Use the researcher for generic queries and programmer for programming queries.
-    Give a binary choice 'researcher' or 'programmer' based on the query. Return the a JSON with a single key 'specialist' and 
+    template="""You are an expert at routing a user query to an action.
+    Use websearch for generic queries.
+    Give a binary choice 'action' or 'FINISH' based on the query. Return the a JSON with a single key 'action' and
     no premable or explanation. Query to route: {messages} """,
     input_variables=["messages"],
 )
@@ -117,7 +115,7 @@ researcher_prompt = PromptTemplate(
 )
 
 researcher_agent = create_agent(
-    llm=agent, tools=tools, system_message=researcher_prompt.template
+    llm=agent, tools=[], system_message=researcher_prompt.template
 )
 
 # Programming node.
@@ -139,24 +137,19 @@ programmer_agent = create_agent(
 # The graph state is the input to each node in the graph.
 class GraphState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
-    tool_call_message: Optional[AIMessage]
 
 
-# Utility function to construct message asking for verification.
-def generate_verification_message(message: AIMessage) -> AIMessage:
-    """Generate "verification message" from message with tool calls."""
-    serialized_tool_calls = json.dumps(
-        message.tool_calls,
-        indent=2,
-    )
-    return AIMessage(
-        content=(
-            "I plan to invoke the following tools, do you approve?\n\n"
-            "Type 'y' if you do, anything else to stop.\n\n"
-            f"{serialized_tool_calls}"
-        ),
-        id=message.id,
-    )
+def call_tools_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    messages = state.messages
+    last_human_message = messages[-2].content
+    print(f"TOOL_WEBSEARCH_INPUT: {last_human_message}")
+    response = tavily_tool.invoke(
+        last_human_message,
+        max_tokens=1024,
+        search_depth="advanced",
+    )[0]["content"]
+    print(f"TOOL_WEBSEARCH_RESPONSE: {response}")
+    return {"messages": [ToolMessage(content=response, tool_call_id=str(uuid.uuid4()))]}
 
 
 def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
@@ -171,7 +164,7 @@ def call_leader_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any
         print(f"LEADER_RESPONSE: {response}")
         return {"messages": [response]}
     else:
-        last_human_message = messages[-1].content
+        last_human_message = messages[-2].content
         print(f"LEADER_NODE_INPUT_EXISTING: {last_human_message}")
         response = leader_agent.invoke(
             {"messages": [HumanMessage(content=last_human_message)]}
@@ -215,17 +208,6 @@ def call_programmer_node(state: GraphState, config: RunnableConfig) -> Dict[str,
     return {"messages": [response]}
 
 
-# Define the function that determines whether to continue or not.
-def should_continue(state: GraphState) -> Literal["continue", "FINISH"]:
-    last_message = state.messages[-1]
-    # If there is no function call, then we finish.
-    if not last_message.tool_calls:
-        return "FINISH"
-    # Otherwise if there is, we continue.
-    else:
-        return "continue"
-
-
 # Define nodes
 def route_query(state: GraphState, config: RunnableConfig) -> str:
     """
@@ -252,29 +234,42 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
         return "FINISH"
 
 
+def should_action(state: GraphState, config: RunnableConfig) -> str:
+    """
+    Route query to tools.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Next node to call
+    """
+
+    print("---ROUTE ACTIONS---")
+    messages = state.messages
+    last_message = str(messages[-1].content)
+    route = json.loads(last_message)
+    if route["action"] == "websearch":
+        print("---ROUTE QUERY to ACTION---")
+        return "action"
+    else:
+        return "FINISH"
+
+
 # Compile workflow graph.
 workflow = StateGraph(GraphState)
-workflow.add_node("action", tools_node)
+workflow.add_node("action", call_tools_node)
 workflow.add_node("leader", call_leader_node)
-workflow.add_node("researcher", call_researcher_node)
-workflow.add_node("programmer", call_programmer_node)
+# workflow.add_node("researcher", call_researcher_node)
+# workflow.add_node("programmer", call_programmer_node)
 
 # Build graph.
 workflow.set_entry_point("leader")
 workflow.add_conditional_edges(
-    "leader",
-    route_query,
-    {
-        "FINISH": END,
-        "researcher": "researcher",
-        "programmer": "programmer",
-    },
+    "leader", should_action, {"action": "action", "FINISH": END}
 )
-workflow.add_conditional_edges(
-    "researcher", should_continue, {"continue": "action", "FINISH": END}
-)
-workflow.add_edge("action", "researcher")
-workflow.add_edge("programmer", END)
+workflow.add_edge("action", "leader")
+# workflow.add_edge("programmer", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
@@ -292,16 +287,13 @@ config: RunnableConfig = {
     "recursion_limit": 150,
     "configurable": {"thread_id": thread_id, "uid": uid},  # runtime values
 }
-print(
-    graph.invoke(
-        {
-            "messages": [
-                HumanMessage(content="who is benjamin buttons?"),
-            ]
-        },
-        config=config,
-    )["messages"][-1].content
-)
+for event in graph.stream(
+    {"messages": [HumanMessage(content="who is michelle obama?")]},
+    config,
+    stream_mode="values",
+):
+    event["messages"][-1].pretty_print()
+
 # Record and parse thread creation isoformat to utc timestamp.
 thread_isoformat = graph.get_state(
     {"configurable": {"thread_id": thread_id}}

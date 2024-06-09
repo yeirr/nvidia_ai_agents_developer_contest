@@ -6,7 +6,6 @@ from typing import Any
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
-from langchain.globals import set_debug, set_verbose
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables.config import RunnableConfig
 from starlette.middleware import Middleware
@@ -65,9 +64,6 @@ app = FastAPI(
     middleware=middleware,
     lifespan=lifespan,
 )
-
-set_debug(False)
-set_verbose(True)
 
 
 @app.post(
