@@ -1,14 +1,13 @@
 import json
 import uuid
 from datetime import datetime
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Union
 
 from IPython.display import Image, display
 from langchain.globals import set_debug, set_verbose
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder,
@@ -16,8 +15,6 @@ from langchain_core.prompts import (
 )
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.tools import ToolException, tool
-from langchain_experimental.tools import PythonREPLTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -27,7 +24,7 @@ set_debug(False)
 set_verbose(True)
 
 # Done: vanilla langgraph react agent
-# TODO: tools node with collection of tools
+# Done: tools node with collection of tools
 # TODO: main langgraph agent loop(retrieval, reflection, human-in-the-loop)
 # TODO: specialized multi-agents(math,sci,law,biz)
 # TODO: combination of SLMs(phi3-mini-4k), LLMs(llama3-8b), LMMs(llama3-70b)
@@ -39,21 +36,9 @@ set_verbose(True)
 # TODO: adopt historical personas(scientist, engineer, philosophers, leaders, educators)
 # TODO: productivity goals and agent loop(research, assess, plan, action, evaluate, visualize, share)
 # TODO: encourage problem-solvers to be novel problem seekers and think flexibly about the approach
-tavily_api = TavilySearchAPIWrapper(
-    tavily_api_key=Path("/home/yeirr/secret/tavily_api.txt")
-    .read_text(
-        encoding="utf-8",
-    )
-    .strip(),
-)
-tavily_tool = TavilySearchResults(api_wrapper=tavily_api, max_results=1)
-python_repl_tool = PythonREPLTool()
-
-tools = [tavily_tool]
 
 
-# Supported models on NGC NIM endpoint.
-# Text
+# Supported text models on NGC NIM endpoint.
 # * "meta/llama3-8b-instruct"
 # * "meta/llama3-70b-instruct"
 # * "mistralai/mistral-large" supports tool call
@@ -95,23 +80,22 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 
 # Leader node.
 leader_prompt = PromptTemplate(
-    template="""You are an expert at routing a user query to an action.
-    Use websearch for generic queries.
-    Give a list of choices 'action', 'FINISH' or safety based on the query. Return the a JSON with a single key 'action' and
-    no premable or explanation. Query to route: {messages} """,
+    template="""You are an expert at routing a user query to a specialist.
+    Use researcher for generic queries.
+    Use programmer for programming queries.
+    Given a binary choice of 'next', 'FINISH' based on the query. 
+
+    Examples:
+
+    ```python
+    {\"supervisor\": {\"next\": \"researcher\"}}
+    {\"supervisor\": {\"next": \"FINISH\"}}
+    ```
+    Return the a JSON with a single key 'supervisor', a nested key 'next' and no premable or explanation. Query to route: {messages} """,
     input_variables=["messages"],
 )
 
 leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.template)
-
-safety_prompt = PromptTemplate(
-    template="""You are a honest and safety expert who redacts any offensive content with [REDACTED].
-    Do not include any commentary.
-    You help summarize the following: \n{messages}""",
-    input_variables=["messages"],
-)
-
-safety_agent = create_agent(llm=agent, tools=[], system_message=safety_prompt.template)
 
 
 # Researcher node.
@@ -148,95 +132,27 @@ class GraphState(BaseModel):
     messages: Annotated[list[AnyMessage], add_messages]
 
 
-def call_tools_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
-    try:
-        messages = state.messages
-        last_human_message = str(messages[-2].content)
-        print(f"TOOL_WEBSEARCH_INPUT: {last_human_message}")
-        response = tavily_tool.invoke(
-            last_human_message,
-            max_tokens=1024,
-            search_depth="advanced",
-        )[0]["content"]
-        print(f"TOOL_WEBSEARCH_RESPONSE: {response}")
-        return {
-            "messages": [ToolMessage(content=response, tool_call_id=str(uuid.uuid4()))]
-        }
-    except ToolException:
-        return {
-            "messages": [
-                ToolMessage(content="Tool exception.", tool_call_id=str(uuid.uuid4()))
-            ]
-        }
-
-
 def call_leader_node(
     state: GraphState, config: RunnableConfig
 ) -> Union[Dict[str, Any], str]:
-    messages = state.messages
-    # New messages list.
-    if len(messages) < 2:
-        last_human_message = messages[0].content
-        print(f"LEADER_NODE_INPUT_NEW: {last_human_message}")
-        response = leader_agent.invoke(
-            {"messages": [HumanMessage(content=last_human_message)]}
-        )
-        print(f"LEADER_RESPONSE: {response}")
-        return {"messages": [response]}
-    else:
-        last_human_message = messages[-2].content
-        if json.loads(last_human_message)["action"] == "websearch":
-            return {"messages": [AIMessage(content='{"action": "safety"}')]}
-        else:
-            print(f"LEADER_NODE_INPUT_EXISTING: {last_human_message}")
-            response = leader_agent.invoke(
-                {"messages": [HumanMessage(content=last_human_message)]}
-            )
-            print(f"LEADER_RESPONSE: {response}")
-            return {"messages": [response]}
-
-
-def call_safety_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
-    messages = state.messages
-    print(f"SAFETY_MESSAGE: {messages}")
-    query = str(messages[-2].content) + "\n" + str(messages[-3].content)
-    response = safety_agent.invoke({"messages": [HumanMessage(content=query)]})
-    return {"messages": [AIMessage(content=response.content)]}
+    query = config["configurable"]["query"]
+    print(f"LEADER_NODE_INPUT: {query}")
+    response = leader_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [response]}
 
 
 def call_researcher_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
-    messages = state.messages
-    last_human_message = messages[-2].content
-    print(f"RESEARCHER_NODE_INPUT: {last_human_message}")
-    if last_human_message == "y":
-        return {
-            "messages": [state.tool_call_message],
-            "tool_call_message": None,
-        }
-
-    else:
-        response = researcher_agent.invoke(
-            {"messages": [HumanMessage(content=last_human_message)]}
-        )
-        print(f"RESEARCHER_RESPONSE: {response.content}")
-        if response.tool_calls:
-            verification_message = generate_verification_message(response)
-            response.id = str(uuid.uuid4())
-            return {"messages": [verification_message], "tool_call_message": response}
-        else:
-            return {"messages": [response], "tool_call_message": None}
+    query = config["configurable"]["query"]
+    print(f"RESEARCHER_NODE_INPUT: {query}")
+    response = researcher_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_programmer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
-    messages = state.messages
-    last_human_message = messages[-2].content
-    print(f"PROGRAMMER_NODE_INPUT: {last_human_message}")
-    response = programmer_agent.invoke(
-        {"messages": [HumanMessage(content=last_human_message)]}
-    )
-    print(f"PROGRAMMER_RESPONSE: {response}")
-    # We return a list, because this will get added to the existing list
-    return {"messages": [response]}
+    query = config["configurable"]["query"]
+    print(f"PROGRAMMER_NODE_INPUT: {query}")
+    response = programmer_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
 
 
 # Define nodes
@@ -251,59 +167,35 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
         str: Next node to call
     """
 
-    print("---ROUTE QUERY---")
     messages = state.messages
     last_message = str(messages[-1].content)  # Target AIMessage
+    print(f"ROUTE_QUERY_INPUT: {last_message}")
     route = json.loads(last_message)
-    if route["specialist"] == "researcher":
+    if route["supervisor"]["next"] == "researcher":
         print("---ROUTE QUERY TO RESEARCHER---")
         return "researcher"
-    elif route["specialist"] == "programmer":
+    elif route["supervisor"]["next"] == "programmer":
         print("---ROUTE QUERY TO PROGRAMMER---")
         return "programmer"
-    else:
-        return "FINISH"
-
-
-def should_action(state: GraphState, config: RunnableConfig) -> str:
-    """
-    Route query to tools.
-
-    Args:
-        state (dict): The current graph state
-
-    Returns:
-        str: Next node to call
-    """
-
-    print("---ROUTE ACTIONS---")
-    messages = state.messages
-    last_message = str(messages[-1].content)
-    route = json.loads(last_message)
-    if route["action"] == "websearch":
-        print("---ROUTE QUERY to ACTION---")
-        return "action"
-    elif route["action"] == "safety":
-        return "safety"
-    else:
+    elif route["supervisor"]["next"] == "FINISH":
         return "FINISH"
 
 
 # Compile workflow graph.
 workflow = StateGraph(GraphState)
-workflow.add_node("action", call_tools_node)
 workflow.add_node("leader", call_leader_node)
-workflow.add_node("safety", call_safety_node)
-# workflow.add_node("researcher", call_researcher_node)
-# workflow.add_node("programmer", call_programmer_node)
+workflow.add_node("researcher", call_researcher_node)
+workflow.add_node("programmer", call_programmer_node)
 
 # Build graph.
 workflow.set_entry_point("leader")
 workflow.add_conditional_edges(
-    "leader", should_action, {"action": "action", "safety": "safety"}
+    "leader",
+    route_query,
+    {"FINISH": END, "researcher": "researcher", "programmer": "programmer"},
 )
-workflow.add_edge("action", "leader")
-workflow.add_edge("safety", END)
+workflow.add_edge("researcher", END)
+workflow.add_edge("programmer", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
@@ -317,12 +209,17 @@ display(
 )
 uid = str(uuid.uuid4())
 thread_id = str(uuid.uuid4())
+query = "code hello world in python and print to terminal"
 config: RunnableConfig = {
     "recursion_limit": 150,
-    "configurable": {"thread_id": thread_id, "uid": uid},  # runtime values
+    "configurable": {
+        "thread_id": thread_id,
+        "uid": uid,
+        "query": query,
+    },
 }
 for event in graph.stream(
-    {"messages": [HumanMessage(content="who is marilyn monroe?")]},
+    {"messages": [HumanMessage(content=query)]},
     config,
     stream_mode="values",
 ):
