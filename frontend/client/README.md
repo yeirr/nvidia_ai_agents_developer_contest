@@ -1,4 +1,4 @@
-# project
+# client
 
 A new Flutter project.
 
