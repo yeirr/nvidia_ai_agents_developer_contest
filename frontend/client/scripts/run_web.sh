@@ -24,18 +24,7 @@ while getopts hdpr opt; do
 		flutter run \
 			--debug \
 			--device-id web-server \
-			--web-hostname localhost \
 			--web-port 8000 \
-			--web-renderer canvaskit \
-			--null-assertions \
-			--extra-front-end-options=--verbosity=error \
-			--dart-define=DebugShowMaterialGrid=false \
-			--dart-define=DebugShowCheckedModeBanner=false \
-			--dart-define=DebugShowSemanticsDebugger=false \
-			--dart-define=ShowPerformanceOverlay=false \
-			--dart-define=FLUTTER_WEB_USE_EXPERIMENTAL_CANVAS_TEXT=true \
-			--dart-define=FLUTTER_WEB_USE_SKIA=true \
-			--dart-define=FLUTTER_WEB_CANVASKIT_URL=/canvaskit/ \
 			--dart-define=ENDPOINT=http://localhost:8080
 		;;
 	p)
@@ -44,19 +33,7 @@ while getopts hdpr opt; do
 			--verbose \
 			--profile \
 			--device-id web-server \
-			--web-hostname localhost \
 			--web-port 8000 \
-			--web-renderer canvaskit \
-			--null-assertions \
-			--cache-sksl \
-			--extra-front-end-options=--verbosity=error \
-			--dart-define=DebugShowMaterialGrid=false \
-			--dart-define=DebugShowCheckedModeBanner=false \
-			--dart-define=DebugShowSemanticsDebugger=false \
-			--dart-define=ShowPerformanceOverlay=false \
-			--dart-define=FLUTTER_WEB_USE_SKIA=true \
-			--dart-define=FLUTTER_WEB_USE_EXPERIMENTAL_CANVAS_TEXT=true \
-			--dart-define=FLUTTER_WEB_CANVASKIT_URL=/canvaskit/ \
 			--dart-define=Dart2jsOptimization=O1 \
 			--dart-define=ENDPOINT=http://localhost:8080
 		;;
@@ -65,15 +42,7 @@ while getopts hdpr opt; do
 		flutter run \
 			--release \
 			--device-id web-server \
-			--web-hostname localhost \
 			--web-port 8000 \
-			--web-renderer canvaskit \
-			--null-assertions \
-			--cache-sksl \
-			--extra-front-end-options=--verbosity=error \
-			--dart-define=FLUTTER_WEB_USE_SKIA=true \
-			--dart-define=FLUTTER_WEB_USE_EXPERIMENTAL_CANVAS_TEXT=true \
-			--dart-define=FLUTTER_WEB_CANVASKIT_URL=/canvaskit/ \
 			--dart-define=Dart2jsOptimization=O4 \
 			--dart-define=ENDPOINT=http://localhost:8080
 		;;
