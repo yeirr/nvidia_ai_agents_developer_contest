@@ -1,7 +1,7 @@
 name: client
 description: "A new Flutter project."
 publish_to: "none"
-version: 0.0.0+alpha.0
+version: 0.0.1+alpha.0
 environment:
   sdk: ">=3.4.3 <4.0.0"
 dependencies:
@@ -13,6 +13,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  build_runner: ^2.4.11
 
 flutter:
   uses-material-design: true
