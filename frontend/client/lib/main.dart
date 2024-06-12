@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:html' as html;
+import 'dart:js' as js;
+import 'dart:js_interop' as js_interop;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -7,17 +11,16 @@ import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
 
 import "package:client/models/state_models.dart";
 import "package:client/configuration_web_mobile.dart";
+import "package:client/gen/request.dart";
+import "package:client/gen/response.dart";
 
-// TODO: ada encrypted store for storing conversation history
-// TODO: add text field for user input
 // TODO: render conversation history
 // TODO: render AIMessage
-// TODO: create request, response json models
 // TODO: create HumanMessage, AIMessage json models
-// TODO: add prompt hints
 
 Future<void> main() async {
   await Hive.initFlutter();
@@ -65,6 +68,8 @@ class _HomePageState extends State<HomePage> {
 
   final LLMModel llmDataModel = LLMModel();
 
+  final navigator = html.window.navigator;
+
   @override
   void dispose() {
     _promptTextEditingController.dispose();
@@ -99,12 +104,8 @@ class _HomePageState extends State<HomePage> {
                   decoration: const BoxDecoration(
                     color: Colors.transparent,
                   ),
-                  // Display prompt hints to guide
-                  // responsible usage behavior on first
-                  // first.
                   child: llmDataModel.isFirstVisit
                       ? promptHintsContainer(textTheme: textTheme)
-                      // Show list of generated text if keyboard no focus.
                       : generatedTextContainer(
                           size: size,
                           context: context,
@@ -135,21 +136,41 @@ class _HomePageState extends State<HomePage> {
                       isDense: true,
                       contentPadding: const EdgeInsets.all(8),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(
                           color: colorScheme.secondary,
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(8),
                           borderSide: BorderSide(
                             color: colorScheme.secondary,
                           )),
                       helperText: ' ',
                       errorText: null,
+                      suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 0, left: 0),
+                          child: IconButton(
+                            icon: const Icon(Icons.autorenew),
+                            iconSize: 16,
+                            splashRadius: 0.2,
+                            color: colorScheme.secondary,
+                            tooltip: 'Generate',
+                            padding: const EdgeInsets.all(0),
+                            onPressed: () async {
+                              setState(() {
+                                llmDataModel.isFirstVisit = false;
+                              });
+                              _promptFocusNode.unfocus();
+                              await runLLMInference(
+                                  human_message: _promptTextEditingController
+                                      .text
+                                      .toString());
+                            },
+                          )),
                     ),
                     maxLengthEnforcement: MaxLengthEnforcement.enforced,
                     validator: null,
@@ -386,6 +407,116 @@ class _HomePageState extends State<HomePage> {
     required TextTheme textTheme,
   }) {
     return Container(
-        child: Text("GENERATED TEXT CONTAINER", style: textTheme.bodyLarge));
+        child: Center(
+            child:
+                Text("GENERATED TEXT CONTAINER", style: textTheme.bodyLarge)));
   }
+
+  bool isFetchAPISupported() {
+    if (html.Performance.supported) {
+      void perfObserver(dynamic list, html.PerformanceObserver observer) {
+        list
+            .getEntriesByType(PerformanceEventTypes.resource.value)
+            .forEach((dynamic entry) {
+          if (entry.initiatorType == WebAPIs.fetch.value) {
+            print('Fetch API is supported in this browser.');
+          } else {
+            print('Fetch API is not supported in this browser.');
+          }
+        });
+      }
+
+      final html.PerformanceObserver observeFetch =
+          html.PerformanceObserver(perfObserver);
+      observeFetch.observe(<String, List<String>>{
+        'entryTypes': <String>['resource']
+      });
+      // Disable additional performance events.
+      observeFetch.disconnect();
+      // Return true if browser support Fetch API.
+      return true;
+    } else {
+      // Performance metrics not supported, fallback to manual feature detecton.
+      print(
+          'Performance metrics not supported, fallback to manual feature detection.');
+      // Return false if browser does not support Fetch API.
+      return false;
+    }
+  }
+
+  Future<void> runLLMInference({required String human_message}) async {
+    final String url = "${const String.fromEnvironment('ENDPOINT')}/generate";
+    // Send network request to remote hosted inference server.
+    if (isFetchAPISupported() && navigator.onLine == true) {
+      final String requestBody =
+          jsonEncode(BaseRequest.fromJson(<String, dynamic>{
+        'data': {"human_message": human_message},
+      }));
+
+      final Map<String, dynamic> requestHeaders = {
+        "accept": 'application/json',
+        "content-type": "application/json",
+        "cache-control": "no-cache"
+      };
+
+      final Map<String, Object?> options = <String, Object?>{
+        'method': 'POST',
+        'headers': requestHeaders,
+        'body': requestBody,
+        'mode': 'cors',
+        'cache': 'default',
+        'credentials': 'same-origin',
+      };
+
+      await html.window
+          .fetch(Uri.parse(url), options)
+          .then((dynamic response) async {
+        final dynamic object =
+            js.JsObject(js.context['Response'] as js.JsFunction);
+
+        if (object['ok'] != true) {
+          // Network error.
+          print('Network error with fetch operation.');
+        } else {
+          // Write response body to local store.
+          final String response_json_text = await response.text();
+          // Decode JSON to Dart Map.
+          print(jsonDecode(response_json_text)['data']['api_message']);
+          print(jsonDecode(response_json_text)['data']['human_message']);
+          print(jsonDecode(response_json_text)['data']['ai_message']);
+        }
+      });
+    } else {
+      // Fallback to offline local on-device inference.
+    }
+  }
+}
+
+/// Available web features and APIs.
+enum WebAPIs {
+  fetch('fetch');
+
+  const WebAPIs(this.value);
+
+  final String value;
+}
+
+/// Subscribe to various performance event types supported in chrome 109.
+enum PerformanceEventTypes {
+  element('element'),
+  event('event'),
+  firstInput('first-input'),
+  largestContentfulPaint('largest-contentful-paint'),
+  layoutShift('layout-shift'),
+  longtask('longtask'),
+  mark('mark'),
+  measure('measure'),
+  navigation('navigation'),
+  paint('paint'),
+  resource('resource');
+
+  const PerformanceEventTypes(this.value);
+
+  /// Returns string representation of enumerated values.
+  final String value;
 }

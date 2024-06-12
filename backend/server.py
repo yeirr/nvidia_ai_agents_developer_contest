@@ -1,9 +1,10 @@
+import json
 import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from langchain_core.messages import HumanMessage
@@ -73,8 +74,10 @@ app = FastAPI(
     deprecated=False,
     status_code=status.HTTP_200_OK,
 )
-async def generate(thread_id: str, query: str) -> ORJSONResponse:
+async def generate(request: Request) -> ORJSONResponse:
     try:
+        request_body = await request.json()
+        human_message = request_body["data"]["human_message"]
         # Unique id to keep track of message threads during single session agent loop.
         thread_id = str(uuid.uuid4())
         config: RunnableConfig = {
@@ -88,17 +91,21 @@ async def generate(thread_id: str, query: str) -> ORJSONResponse:
         # )
 
         content = {
-            "api_message": "LLM inference successful.",
-            "human_message": query,
-            # "ai_message": result["messages"][-1].content,
-            "ai_message": str(uuid.uuid4()),
+            "data": {
+                "api_message": "LLM inference successful.",
+                "human_message": human_message,
+                # "ai_message": result["messages"][-1].content,
+                "ai_message": str(uuid.uuid4()),
+            }
         }
         return ORJSONResponse(content=content, status_code=status.HTTP_200_OK)
     except Exception:
         content = {
-            "api_message": "LLM inference failed.",
-            "human_message": query,
-            "ai_message": "",
+            "data": {
+                "api_message": "LLM inference failed.",
+                "human_message": human_message,
+                "ai_message": "",
+            }
         }
         return ORJSONResponse(
             content=content, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
