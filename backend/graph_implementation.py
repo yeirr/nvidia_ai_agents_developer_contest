@@ -199,34 +199,36 @@ workflow.add_edge("programmer", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
+
 # Sanity checks by visualizing graph(with nested structures) and running warmup inference.
-display(
-    Image(
-        graph.get_graph(xray=True).draw_mermaid_png(
-            output_file_path="/tmp/llm_workflow.png"
+def sanity_check() -> None:
+    display(
+        Image(
+            graph.get_graph(xray=True).draw_mermaid_png(
+                output_file_path="/tmp/llm_workflow.png"
+            )
         )
     )
-)
-uid = str(uuid.uuid4())
-thread_id = str(uuid.uuid4())
-query = "code hello world in python and print to terminal"
-config: RunnableConfig = {
-    "recursion_limit": 150,
-    "configurable": {
-        "thread_id": thread_id,
-        "uid": uid,
-        "query": query,
-    },
-}
-for event in graph.stream(
-    {"messages": [HumanMessage(content=query)]},
-    config,
-    stream_mode="values",
-):
-    event["messages"][-1].pretty_print()
+    uid = str(uuid.uuid4())
+    thread_id = str(uuid.uuid4())
+    query = "code hello world in python and print to terminal"
+    config: RunnableConfig = {
+        "recursion_limit": 150,
+        "configurable": {
+            "thread_id": thread_id,
+            "uid": uid,
+            "query": query,
+        },
+    }
+    for event in graph.stream(
+        {"messages": [HumanMessage(content=query)]},
+        config,
+        stream_mode="values",
+    ):
+        event["messages"][-1].pretty_print()
 
-# Record and parse thread creation isoformat to utc timestamp.
-thread_isoformat = graph.get_state(
-    {"configurable": {"thread_id": thread_id}}
-).created_at
-thread_timestamp_utc = datetime.fromisoformat(thread_isoformat).timestamp()
+    # Record and parse thread creation isoformat to utc timestamp.
+    thread_isoformat = graph.get_state(
+        {"configurable": {"thread_id": thread_id}}
+    ).created_at
+    thread_timestamp_utc = datetime.fromisoformat(thread_isoformat).timestamp()

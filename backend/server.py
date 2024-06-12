@@ -80,17 +80,18 @@ async def generate(thread_id: str, query: str) -> ORJSONResponse:
         config: RunnableConfig = {
             "configurable": {"uid": "123456", "thread_id": thread_id},
         }
-        result = graph.invoke(
-            {
-                "messages": [HumanMessage(content=query)],
-            },
-            config=config,
-        )
+        # result = graph.invoke(
+        # {
+        # "messages": [HumanMessage(content=query)],
+        # },
+        # config=config,
+        # )
 
         content = {
             "api_message": "LLM inference successful.",
             "human_message": query,
-            "ai_message": result["messages"][-1].content,
+            # "ai_message": result["messages"][-1].content,
+            "ai_message": str(uuid.uuid4()),
         }
         return ORJSONResponse(content=content, status_code=status.HTTP_200_OK)
     except Exception:
