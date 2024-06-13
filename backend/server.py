@@ -1,10 +1,9 @@
-import json
 import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from langchain_core.messages import HumanMessage
@@ -14,6 +13,7 @@ from starlette_context import plugins
 from starlette_context.middleware import RawContextMiddleware
 
 from graph_implementation import graph
+from schema.data_models import BaseRequest, BaseResponse, Tags
 
 
 @asynccontextmanager
@@ -69,23 +69,23 @@ app = FastAPI(
 
 @app.post(
     "/generate",
-    tags=["generate"],
+    tags=[Tags.text_inference],
     summary="Text inference endpoint",
     deprecated=False,
     status_code=status.HTTP_200_OK,
 )
-async def generate(request: Request) -> ORJSONResponse:
+async def generate(request: BaseRequest) -> ORJSONResponse:
+    # Unique id to keep track of message threads during single session agent loop.
+    thread_id = str(uuid.uuid4())
     try:
-        request_body = await request.json()
-        human_message = request_body["data"]["human_message"]
-        # Unique id to keep track of message threads during single session agent loop.
-        thread_id = str(uuid.uuid4())
-        config: RunnableConfig = {
-            "configurable": {"uid": "123456", "thread_id": thread_id},
-        }
+        request_body = request.data
+        human_message = request_body["human_message"]
+        # config: RunnableConfig = {
+        # "configurable": {"uid": "123456", "thread_id": thread_id},
+        # }
         # result = graph.invoke(
         # {
-        # "messages": [HumanMessage(content=query)],
+        # "messages": [HumanMessage(content=human_message)],
         # },
         # config=config,
         # )
@@ -96,15 +96,17 @@ async def generate(request: Request) -> ORJSONResponse:
                 "human_message": human_message,
                 # "ai_message": result["messages"][-1].content,
                 "ai_message": str(uuid.uuid4()),
+                "thread_id": thread_id,
             }
         }
         return ORJSONResponse(content=content, status_code=status.HTTP_200_OK)
     except Exception:
         content = {
             "data": {
-                "api_message": "LLM inference failed.",
+                "api_message": "Generate endpoint failure.",
                 "human_message": human_message,
-                "ai_message": "",
+                "ai_message": "LLM inference server failure.",
+                "thread_id": thread_id,
             }
         }
         return ORJSONResponse(

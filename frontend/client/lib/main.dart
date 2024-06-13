@@ -14,7 +14,6 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
 import 'package:web/web.dart' as web;
 import 'package:flutter/services.dart';
 
@@ -25,7 +24,6 @@ import "package:client/gen/response.dart";
 
 // TODO: persist conversation history to local store
 // TODO: load previous history from local store
-final Uuid uuid = Uuid();
 
 class Message {
   String content;
@@ -97,8 +95,6 @@ class _HomePageState extends State<HomePage> {
   final LLMModel llmDataModel = LLMModel();
 
   final navigator = html.window.navigator;
-
-  final String threadId = uuid.v4();
 
   @override
   void dispose() {
@@ -203,8 +199,7 @@ class _HomePageState extends State<HomePage> {
                                             humanMessage:
                                                 _promptTextEditingController
                                                     .text
-                                                    .toString(),
-                                            threadId: threadId)
+                                                    .toString())
                                         .whenComplete(() {
                                       // Trigger rebuild of UI.
                                       setState(() {});
@@ -580,8 +575,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> runLLMInference(
-      {required String humanMessage, required String threadId}) async {
+  Future<void> runLLMInference({required String humanMessage}) async {
     final String url = "${const String.fromEnvironment('ENDPOINT')}/generate";
     // Append to conversation history.
     messages.add(HumanMessage(content: humanMessage));
@@ -627,7 +621,6 @@ class _HomePageState extends State<HomePage> {
           messages.add(AIMessage(
               content: jsonDecode(response_json_text)['data']['ai_message']));
 
-          print('client threadID:$threadId');
           print('MESSAGES_LENGTH:${messages.length}');
           print('MESSAGES_ORDER:${messages}');
 
