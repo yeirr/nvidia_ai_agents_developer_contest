@@ -23,7 +23,6 @@ import "package:client/configuration_web_mobile.dart";
 import "package:client/gen/request.dart";
 import "package:client/gen/response.dart";
 
-// TODO: render AIMessage response
 // TODO: persist conversation history to local store
 // TODO: load previous history from local store
 final Uuid uuid = Uuid();
@@ -91,6 +90,7 @@ class _HomePageState extends State<HomePage> {
   ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   bool _isInitialized = false;
+  bool _isGenerating = false;
   // Load from local secure store to runtime.
   final Box encryptedChatHistoryBox = Hive.box<dynamic>('history');
 
@@ -185,25 +185,35 @@ class _HomePageState extends State<HomePage> {
                       errorText: null,
                       suffixIcon: Padding(
                           padding: const EdgeInsets.only(right: 0, left: 0),
-                          child: IconButton(
-                            icon: const Icon(Icons.autorenew),
-                            iconSize: 16,
-                            splashRadius: 0.2,
-                            color: colorScheme.secondary,
-                            tooltip: 'Generate',
-                            padding: const EdgeInsets.all(0),
-                            onPressed: () async {
-                              setState(() {
-                                llmDataModel.isFirstVisit = false;
-                              });
-                              _promptFocusNode.unfocus();
-                              await runLLMInference(
-                                  humanMessage: _promptTextEditingController
-                                      .text
-                                      .toString(),
-                                  threadId: threadId);
-                            },
-                          )),
+                          child: _isGenerating
+                              ? showSpinningIndicator()
+                              : IconButton(
+                                  icon: const Icon(Icons.autorenew),
+                                  iconSize: 16,
+                                  splashRadius: 0.2,
+                                  color: colorScheme.secondary,
+                                  tooltip: 'Generate',
+                                  padding: const EdgeInsets.all(0),
+                                  onPressed: () async {
+                                    setState(() {
+                                      llmDataModel.isFirstVisit = false;
+                                    });
+                                    _promptFocusNode.unfocus();
+                                    await runLLMInference(
+                                            humanMessage:
+                                                _promptTextEditingController
+                                                    .text
+                                                    .toString(),
+                                            threadId: threadId)
+                                        .whenComplete(() {
+                                      // Trigger rebuild of UI.
+                                      setState(() {});
+
+                                      // End progress indicator.
+                                      _isGenerating = false;
+                                    });
+                                  },
+                                )),
                     ),
                     maxLengthEnforcement: MaxLengthEnforcement.enforced,
                     validator: null,
@@ -217,11 +227,26 @@ class _HomePageState extends State<HomePage> {
                   "Llama3 can produce inaccurate results. Verify with trusted sources.",
                   style: textTheme.bodyLarge
                       ?.copyWith(color: Colors.blueGrey.shade400),
+                  textAlign: TextAlign.start,
                 ))),
           ],
         );
       }),
     );
+  }
+
+  Widget showSpinningIndicator() {
+    /// Show 16x16 px spinning indicator with background color.
+    return Center(
+        widthFactor: 1.5,
+        heightFactor: 1,
+        child: SizedBox(
+            width: 16.0,
+            height: 16.0,
+            child: CircularProgressIndicator(
+              backgroundColor: Colors.amberAccent,
+              strokeWidth: 1.5,
+            )));
   }
 
   double outputContainerHeightMobile(
@@ -442,78 +467,85 @@ class _HomePageState extends State<HomePage> {
     required List<Message> messages,
   }) {
     final List<Message> messagesReversed = messages.reversed.toList();
-    return Container(
-        color: Colors.transparent,
-        child: Scrollbar(
-            controller: _scrollController,
-            thickness: 10.0,
-            radius: Radius.circular(8),
-            thumbVisibility: true,
-            child: ListView.builder(
-              reverse: true,
-              controller: _scrollController,
-              itemCount: messages.length,
-              itemBuilder: (BuildContext context, int index) {
-                return Padding(
-                    padding:
-                        const EdgeInsets.only(bottom: 8, left: 8, right: 16),
-                    child: messagesReversed[index] is AIMessage
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            children: <Widget>[
-                                Container(
-                                  width: size.width * 0.85,
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.blue,
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .secondary,
+    return Column(children: [
+      Expanded(
+          child: Container(
+              color: Colors.transparent,
+              child: Scrollbar(
+                  controller: _scrollController,
+                  thickness: 10.0,
+                  radius: Radius.circular(8),
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    reverse: true,
+                    controller: _scrollController,
+                    itemCount: messages.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      return Padding(
+                          padding: const EdgeInsets.only(
+                              bottom: 8, left: 8, right: 16),
+                          child: messagesReversed[index] is AIMessage
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  children: <Widget>[
+                                      Container(
+                                        width: size.width * 0.85,
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                            color: Colors.blue,
+                                            border: Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .secondary,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(4)),
+                                        child: Row(children: <Widget>[
+                                          Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: <Widget>[
+                                                Text(
+                                                  "Llama3",
+                                                  style: textTheme.bodyLarge,
+                                                  textAlign: TextAlign.left,
+                                                ),
+                                                Text(
+                                                  messagesReversed[index]
+                                                      .content,
+                                                  style: textTheme.bodyLarge,
+                                                  softWrap: true,
+                                                  textAlign: TextAlign.left,
+                                                )
+                                              ]),
+                                        ]),
                                       ),
-                                      borderRadius: BorderRadius.circular(4)),
-                                  child: Row(children: <Widget>[
-                                    Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: <Widget>[
-                                          Text(
-                                            "Llama3",
-                                            style: textTheme.bodyLarge,
-                                            textAlign: TextAlign.left,
-                                          ),
-                                          Text(
+                                    ])
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: <Widget>[
+                                      Container(
+                                        width: size.width * 0.85,
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                            color: Colors.green,
+                                            border: Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .secondary,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(4)),
+                                        child: Text(
                                             messagesReversed[index].content,
                                             style: textTheme.bodyLarge,
-                                            softWrap: true,
-                                            textAlign: TextAlign.left,
-                                          )
-                                        ]),
-                                  ]),
-                                ),
-                              ])
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: <Widget>[
-                                Container(
-                                  width: size.width * 0.85,
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: Colors.green,
-                                      border: Border.all(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .secondary,
-                                      ),
-                                      borderRadius: BorderRadius.circular(4)),
-                                  child: Text(messagesReversed[index].content,
-                                      style: textTheme.bodyLarge,
-                                      textAlign: TextAlign.end,
-                                      softWrap: true),
-                                )
-                              ]));
-              },
-            )));
+                                            textAlign: TextAlign.end,
+                                            softWrap: true),
+                                      )
+                                    ]));
+                    },
+                  )))),
+    ]);
   }
 
   bool isFetchAPISupported() {
@@ -556,6 +588,9 @@ class _HomePageState extends State<HomePage> {
 
     // Send network request to remote hosted inference server.
     if (isFetchAPISupported() && navigator.onLine == true) {
+      // Start progress indicator.
+      _isGenerating = true;
+
       final String requestBody =
           jsonEncode(BaseRequest.fromJson(<String, dynamic>{
         'data': {"human_message": humanMessage},
