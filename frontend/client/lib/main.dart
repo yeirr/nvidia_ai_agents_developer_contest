@@ -3,24 +3,52 @@ import 'dart:html' as html;
 import 'dart:js' as js;
 import 'dart:js_interop' as js_interop;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import 'package:web/web.dart' as web;
+import 'package:flutter/services.dart';
 
 import "package:client/models/state_models.dart";
 import "package:client/configuration_web_mobile.dart";
 import "package:client/gen/request.dart";
 import "package:client/gen/response.dart";
 
-// TODO: render conversation history
-// TODO: render AIMessage
-// TODO: create HumanMessage, AIMessage json models
+// TODO: render AIMessage response
+// TODO: persist conversation history to local store
+// TODO: load previous history from local store
+final Uuid uuid = Uuid();
+
+class Message {
+  String content;
+
+  Message({
+    required String this.content,
+  });
+}
+
+class SystemMessage extends Message {
+  SystemMessage({content}) : super(content: content);
+}
+
+class AIMessage extends Message {
+  AIMessage({content}) : super(content: content);
+}
+
+class HumanMessage extends Message {
+  HumanMessage({content}) : super(content: content);
+}
+
+List<Message> messages = <Message>[];
 
 Future<void> main() async {
   await Hive.initFlutter();
@@ -70,6 +98,8 @@ class _HomePageState extends State<HomePage> {
 
   final navigator = html.window.navigator;
 
+  final String threadId = uuid.v4();
+
   @override
   void dispose() {
     _promptTextEditingController.dispose();
@@ -100,7 +130,7 @@ class _HomePageState extends State<HomePage> {
                   orientation: orientation,
                 ),
                 child: Container(
-                  alignment: Alignment.topLeft,
+                  alignment: Alignment.topCenter,
                   decoration: const BoxDecoration(
                     color: Colors.transparent,
                   ),
@@ -111,6 +141,8 @@ class _HomePageState extends State<HomePage> {
                           context: context,
                           orientation: orientation,
                           textTheme: textTheme,
+                          constraints: constraints,
+                          messages: messages,
                         ),
                 )),
             // Text input.
@@ -166,9 +198,10 @@ class _HomePageState extends State<HomePage> {
                               });
                               _promptFocusNode.unfocus();
                               await runLLMInference(
-                                  human_message: _promptTextEditingController
+                                  humanMessage: _promptTextEditingController
                                       .text
-                                      .toString());
+                                      .toString(),
+                                  threadId: threadId);
                             },
                           )),
                     ),
@@ -405,11 +438,82 @@ class _HomePageState extends State<HomePage> {
     required BuildContext context,
     required Orientation orientation,
     required TextTheme textTheme,
+    required BoxConstraints constraints,
+    required List<Message> messages,
   }) {
+    final List<Message> messagesReversed = messages.reversed.toList();
     return Container(
-        child: Center(
-            child:
-                Text("GENERATED TEXT CONTAINER", style: textTheme.bodyLarge)));
+        color: Colors.transparent,
+        child: Scrollbar(
+            controller: _scrollController,
+            thickness: 10.0,
+            radius: Radius.circular(8),
+            thumbVisibility: true,
+            child: ListView.builder(
+              reverse: true,
+              controller: _scrollController,
+              itemCount: messages.length,
+              itemBuilder: (BuildContext context, int index) {
+                return Padding(
+                    padding:
+                        const EdgeInsets.only(bottom: 8, left: 8, right: 16),
+                    child: messagesReversed[index] is AIMessage
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: <Widget>[
+                                Container(
+                                  width: size.width * 0.85,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                      color: Colors.blue,
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .secondary,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4)),
+                                  child: Row(children: <Widget>[
+                                    Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            "Llama3",
+                                            style: textTheme.bodyLarge,
+                                            textAlign: TextAlign.left,
+                                          ),
+                                          Text(
+                                            messagesReversed[index].content,
+                                            style: textTheme.bodyLarge,
+                                            softWrap: true,
+                                            textAlign: TextAlign.left,
+                                          )
+                                        ]),
+                                  ]),
+                                ),
+                              ])
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: <Widget>[
+                                Container(
+                                  width: size.width * 0.85,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      border: Border.all(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .secondary,
+                                      ),
+                                      borderRadius: BorderRadius.circular(4)),
+                                  child: Text(messagesReversed[index].content,
+                                      style: textTheme.bodyLarge,
+                                      textAlign: TextAlign.end,
+                                      softWrap: true),
+                                )
+                              ]));
+              },
+            )));
   }
 
   bool isFetchAPISupported() {
@@ -444,13 +548,17 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> runLLMInference({required String human_message}) async {
+  Future<void> runLLMInference(
+      {required String humanMessage, required String threadId}) async {
     final String url = "${const String.fromEnvironment('ENDPOINT')}/generate";
+    // Append to conversation history.
+    messages.add(HumanMessage(content: humanMessage));
+
     // Send network request to remote hosted inference server.
     if (isFetchAPISupported() && navigator.onLine == true) {
       final String requestBody =
           jsonEncode(BaseRequest.fromJson(<String, dynamic>{
-        'data': {"human_message": human_message},
+        'data': {"human_message": humanMessage},
       }));
 
       final Map<String, dynamic> requestHeaders = {
@@ -480,10 +588,24 @@ class _HomePageState extends State<HomePage> {
         } else {
           // Write response body to local store.
           final String response_json_text = await response.text();
-          // Decode JSON to Dart Map.
-          print(jsonDecode(response_json_text)['data']['api_message']);
-          print(jsonDecode(response_json_text)['data']['human_message']);
-          print(jsonDecode(response_json_text)['data']['ai_message']);
+          // Append decoded 'AIMessage' to conversation history.
+          messages.add(AIMessage(
+              content: jsonDecode(response_json_text)['data']['ai_message']));
+
+          print('client threadID:$threadId');
+          print('MESSAGES_LENGTH:${messages.length}');
+          print('MESSAGES_ORDER:${messages}');
+
+          // Persist entire conversation history to local storage.
+          //encryptedChatHistoryBox
+          //.put(threadId.toString(), [messages[0].content]);
+
+          // Auto scroll to newest item.
+          _scrollController.animateTo(
+            _scrollController.position.minScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+          );
         }
       });
     } else {
