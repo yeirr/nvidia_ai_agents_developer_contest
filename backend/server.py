@@ -66,6 +66,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Unique id to keep track of message threads during single session agent loop.
+thread_id = str(uuid.uuid4())
+
 
 @app.post(
     "/generate",
@@ -75,27 +78,28 @@ app = FastAPI(
     status_code=status.HTTP_200_OK,
 )
 async def generate(request: BaseRequest) -> ORJSONResponse:
-    # Unique id to keep track of message threads during single session agent loop.
-    thread_id = str(uuid.uuid4())
     try:
         request_body = request.data
         human_message = request_body["human_message"]
-        # config: RunnableConfig = {
-        # "configurable": {"uid": "123456", "thread_id": thread_id},
-        # }
-        # result = graph.invoke(
-        # {
-        # "messages": [HumanMessage(content=human_message)],
-        # },
-        # config=config,
-        # )
+        config: RunnableConfig = {
+            "configurable": {
+                "uid": "123456",
+                "thread_id": thread_id,
+                "query": human_message,
+            },
+        }
+        result = graph.invoke(
+            {
+                "messages": [HumanMessage(content=human_message)],
+            },
+            config=config,
+        )
 
         content = {
             "data": {
                 "api_message": "LLM inference successful.",
                 "human_message": human_message,
-                # "ai_message": result["messages"][-1].content,
-                "ai_message": str(uuid.uuid4()),
+                "ai_message": result["messages"][-1].content,
                 "thread_id": thread_id,
             }
         }
