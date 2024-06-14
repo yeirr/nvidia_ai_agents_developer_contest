@@ -22,6 +22,7 @@ import "package:client/configuration_web_mobile.dart";
 import "package:client/gen/request.dart";
 import "package:client/gen/response.dart";
 
+// TODO: fix text rendering for long passages from AIMessage
 // TODO: persist conversation history to local store
 // TODO: load previous history from local store
 
@@ -462,9 +463,10 @@ class _HomePageState extends State<HomePage> {
     required List<Message> messages,
   }) {
     final List<Message> messagesReversed = messages.reversed.toList();
-    return Column(children: [
+    return Column(children: <Widget>[
       Expanded(
           child: Container(
+              padding: const EdgeInsets.only(top: 4, bottom: 4),
               color: Colors.transparent,
               child: Scrollbar(
                   controller: _scrollController,
@@ -480,6 +482,7 @@ class _HomePageState extends State<HomePage> {
                           padding: const EdgeInsets.only(
                               bottom: 8, left: 8, right: 16),
                           child: messagesReversed[index] is AIMessage
+                              // Render AIMessage.
                               ? Row(
                                   mainAxisAlignment: MainAxisAlignment.start,
                                   children: <Widget>[
@@ -487,7 +490,7 @@ class _HomePageState extends State<HomePage> {
                                         width: size.width * 0.85,
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                            color: Colors.blue,
+                                            color: Colors.blue[100],
                                             border: Border.all(
                                               color: Theme.of(context)
                                                   .colorScheme
@@ -496,34 +499,36 @@ class _HomePageState extends State<HomePage> {
                                             borderRadius:
                                                 BorderRadius.circular(4)),
                                         child: Row(children: <Widget>[
-                                          Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: <Widget>[
+                                          Expanded(
+                                              child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: <Widget>[
                                                 Text(
                                                   "Llama3",
                                                   style: textTheme.bodyLarge,
-                                                  textAlign: TextAlign.left,
+                                                  textAlign: TextAlign.start,
                                                 ),
                                                 Text(
                                                   messagesReversed[index]
                                                       .content,
                                                   style: textTheme.bodyLarge,
                                                   softWrap: true,
-                                                  textAlign: TextAlign.left,
+                                                  textAlign: TextAlign.start,
                                                 )
-                                              ]),
+                                              ])),
                                         ]),
                                       ),
                                     ])
+                              // Render HumanMessage.
                               : Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: <Widget>[
                                       Container(
-                                        width: size.width * 0.85,
+                                        width: size.width * 0.7,
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                            color: Colors.green,
+                                            color: Colors.green[200],
                                             border: Border.all(
                                               color: Theme.of(context)
                                                   .colorScheme
@@ -534,7 +539,7 @@ class _HomePageState extends State<HomePage> {
                                         child: Text(
                                             messagesReversed[index].content,
                                             style: textTheme.bodyLarge,
-                                            textAlign: TextAlign.end,
+                                            textAlign: TextAlign.start,
                                             softWrap: true),
                                       )
                                     ]));
