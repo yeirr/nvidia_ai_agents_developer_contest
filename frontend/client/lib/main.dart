@@ -15,35 +15,47 @@ import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
-import 'package:flutter/services.dart';
 
 import "package:client/models/state_models.dart";
 import "package:client/configuration_web_mobile.dart";
 import "package:client/gen/request.dart";
 import "package:client/gen/response.dart";
 
-// TODO: fix text rendering for long passages from AIMessage
 // TODO: persist conversation history to local store
-// TODO: load previous history from local store
+// TODO: load existing conversation history from local store
 
 class Message {
   String content;
+  String id;
 
   Message({
     required String this.content,
+    required String this.id,
   });
 }
 
 class SystemMessage extends Message {
-  SystemMessage({content}) : super(content: content);
+  SystemMessage({content, id})
+      : super(
+          content: content,
+          id: id,
+        );
 }
 
 class AIMessage extends Message {
-  AIMessage({content}) : super(content: content);
+  AIMessage({content, id})
+      : super(
+          content: content,
+          id: id,
+        );
 }
 
 class HumanMessage extends Message {
-  HumanMessage({content}) : super(content: content);
+  HumanMessage({content, id})
+      : super(
+          content: content,
+          id: id,
+        );
 }
 
 List<Message> messages = <Message>[];
@@ -84,13 +96,14 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final TextEditingController _promptTextEditingController =
       TextEditingController(text: '');
+  final ScrollController _scrollController =
+      ScrollController(debugLabel: "messagesList");
   final FocusNode _promptFocusNode =
       FocusNode(debugLabel: 'textFieldFocusNode');
-  ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   bool _isInitialized = false;
   bool _isGenerating = false;
-  // Load from local secure store to runtime.
+
   final Box encryptedChatHistoryBox = Hive.box<dynamic>('history');
 
   final LLMModel llmDataModel = LLMModel();
@@ -151,7 +164,7 @@ class _HomePageState extends State<HomePage> {
                   child: TextFormField(
                     controller: _promptTextEditingController,
                     focusNode: _promptFocusNode,
-                    readOnly: _isLoading ? true : false,
+                    readOnly: _isGenerating ? true : false,
                     autovalidateMode: AutovalidateMode.onUserInteraction,
                     minLines: null,
                     maxLines:
@@ -202,11 +215,28 @@ class _HomePageState extends State<HomePage> {
                                                     .text
                                                     .toString())
                                         .whenComplete(() {
-                                      // Trigger rebuild of UI.
-                                      setState(() {});
-
                                       // End progress indicator.
                                       _isGenerating = false;
+
+                                      // Trigger rebuild of UI.
+                                      Future.delayed(
+                                          const Duration(milliseconds: 1500),
+                                          () {
+                                        setState(() {
+                                          // Maintain scroll position.
+                                          _scrollController.animateTo(
+                                            _scrollController
+                                                    .position.maxScrollExtent +
+                                                64,
+                                            duration: const Duration(
+                                                milliseconds: 200),
+                                            curve: Curves.easeInOut,
+                                          );
+                                        });
+                                      });
+
+                                      // Request focus on text field.
+                                      _promptFocusNode.requestFocus();
                                     });
                                   },
                                 )),
@@ -454,6 +484,76 @@ class _HomePageState extends State<HomePage> {
         )));
   }
 
+  List<Widget> _buildList({
+    required Size size,
+    required BuildContext context,
+    required Orientation orientation,
+    required TextTheme textTheme,
+    required BoxConstraints constraints,
+    required List<Message> messages,
+  }) {
+    return List.generate(messages.length, (int index) {
+      return Padding(
+          padding: const EdgeInsets.only(bottom: 8, left: 8, right: 16),
+          child: messages[index] is AIMessage
+              // Render AIMessage.
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: <Widget>[
+                      Container(
+                        key: GlobalObjectKey(messages[index].id),
+                        width: size.width * 0.85,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                            color: Colors.blue[100],
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                            borderRadius: BorderRadius.circular(4)),
+                        child: Row(children: <Widget>[
+                          Expanded(
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                Text(
+                                  "Llama3",
+                                  style: textTheme.bodyLarge,
+                                  textAlign: TextAlign.start,
+                                ),
+                                Text(
+                                  messages[index].content,
+                                  style: textTheme.bodyLarge,
+                                  softWrap: true,
+                                  textAlign: TextAlign.start,
+                                )
+                              ])),
+                        ]),
+                      ),
+                    ])
+              // Render HumanMessage.
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                      Container(
+                        key: GlobalObjectKey(messages[index].id),
+                        width: size.width * 0.7,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                            color: Colors.green[200],
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                            borderRadius: BorderRadius.circular(4)),
+                        child: Text(messages[index].content,
+                            style: textTheme.bodyLarge,
+                            textAlign: TextAlign.start,
+                            softWrap: true),
+                      )
+                    ]));
+    }, growable: true)
+        .toList();
+  }
+
   Widget generatedTextContainer({
     required Size size,
     required BuildContext context,
@@ -462,90 +562,29 @@ class _HomePageState extends State<HomePage> {
     required BoxConstraints constraints,
     required List<Message> messages,
   }) {
-    final List<Message> messagesReversed = messages.reversed.toList();
-    return Column(children: <Widget>[
-      Expanded(
-          child: Container(
-              padding: const EdgeInsets.only(top: 4, bottom: 4),
-              color: Colors.transparent,
-              child: Scrollbar(
-                  controller: _scrollController,
-                  thickness: 10.0,
-                  radius: Radius.circular(8),
-                  thumbVisibility: true,
-                  child: ListView.builder(
-                    reverse: true,
-                    controller: _scrollController,
-                    itemCount: messages.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return Padding(
-                          padding: const EdgeInsets.only(
-                              bottom: 8, left: 8, right: 16),
-                          child: messagesReversed[index] is AIMessage
-                              // Render AIMessage.
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.start,
-                                  children: <Widget>[
-                                      Container(
-                                        width: size.width * 0.85,
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                            color: Colors.blue[100],
-                                            border: Border.all(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .secondary,
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(4)),
-                                        child: Row(children: <Widget>[
-                                          Expanded(
-                                              child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: <Widget>[
-                                                Text(
-                                                  "Llama3",
-                                                  style: textTheme.bodyLarge,
-                                                  textAlign: TextAlign.start,
-                                                ),
-                                                Text(
-                                                  messagesReversed[index]
-                                                      .content,
-                                                  style: textTheme.bodyLarge,
-                                                  softWrap: true,
-                                                  textAlign: TextAlign.start,
-                                                )
-                                              ])),
-                                        ]),
-                                      ),
-                                    ])
-                              // Render HumanMessage.
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: <Widget>[
-                                      Container(
-                                        width: size.width * 0.7,
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                            color: Colors.green[200],
-                                            border: Border.all(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .secondary,
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(4)),
-                                        child: Text(
-                                            messagesReversed[index].content,
-                                            style: textTheme.bodyLarge,
-                                            textAlign: TextAlign.start,
-                                            softWrap: true),
-                                      )
-                                    ]));
-                    },
-                  )))),
-    ]);
+    //final List<Message> messagesReversed = messages.reversed.toList();
+    return Container(
+        padding: const EdgeInsets.only(top: 4, bottom: 4),
+        color: Colors.transparent,
+        child: Scrollbar(
+          controller: _scrollController,
+          thickness: 10.0,
+          radius: Radius.circular(8),
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+              reverse: false,
+              controller: _scrollController,
+              child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: _buildList(
+                    size: size,
+                    context: context,
+                    orientation: orientation,
+                    textTheme: textTheme,
+                    constraints: constraints,
+                    messages: messages,
+                  ))),
+        ));
   }
 
   bool isFetchAPISupported() {
@@ -583,7 +622,23 @@ class _HomePageState extends State<HomePage> {
   Future<void> runLLMInference({required String humanMessage}) async {
     final String url = "${const String.fromEnvironment('ENDPOINT')}/generate";
     // Append to conversation history.
-    messages.add(HumanMessage(content: humanMessage));
+    messages.add(HumanMessage(
+      content: humanMessage,
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+    ));
+
+    // Scroll to last human message.
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setState(() {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent + 64,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+        );
+      });
+      // Clear existing value in text field..
+      _promptTextEditingController.clear();
+    });
 
     // Send network request to remote hosted inference server.
     if (isFetchAPISupported() && navigator.onLine == true) {
@@ -624,21 +679,16 @@ class _HomePageState extends State<HomePage> {
           final String response_json_text = await response.text();
           // Append decoded 'AIMessage' to conversation history.
           messages.add(AIMessage(
-              content: jsonDecode(response_json_text)['data']['ai_message']));
+              content: jsonDecode(response_json_text)['data']['ai_message'],
+              id: DateTime.now().millisecondsSinceEpoch.toString()));
 
           print('MESSAGES_LENGTH:${messages.length}');
           print('MESSAGES_ORDER:${messages}');
 
           // Persist entire conversation history to local storage.
-          //encryptedChatHistoryBox
-          //.put(threadId.toString(), [messages[0].content]);
-
-          // Auto scroll to newest item.
-          _scrollController.animateTo(
-            _scrollController.position.minScrollExtent,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
+          encryptedChatHistoryBox.put(
+              jsonDecode(response_json_text)['data']['thread_id'],
+              [messages.toString()]);
         }
       });
     } else {
