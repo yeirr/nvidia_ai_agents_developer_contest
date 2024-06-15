@@ -14,15 +14,11 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:web/web.dart' as web;
 
 import "package:client/models/state_models.dart";
 import "package:client/configuration_web_mobile.dart";
 import "package:client/gen/request.dart";
 import "package:client/gen/response.dart";
-
-// TODO: persist conversation history to local store
-// TODO: load existing conversation history from local store
 
 class Message {
   String content;
@@ -155,6 +151,103 @@ class _HomePageState extends State<HomePage> {
                           messages: messages,
                         ),
                 )),
+            // Graph selection.
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 12,
+                  ),
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Icon(
+                        Icons.commit_outlined,
+                        size: 32,
+                        color: colorScheme.primary,
+                      ))),
+              onTap: () async {
+                await showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.grey[100],
+                    builder: (BuildContext context) {
+                      return StatefulBuilder(builder:
+                          (BuildContext context, StateSetter setModalState) {
+                        return Container(
+                            width: size.width,
+                            height: size.height,
+                            child: Column(children: <Widget>[
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: <Widget>[
+                                  Padding(
+                                      padding: const EdgeInsets.only(top: 16),
+                                      child: TextButton(
+                                        child: Text(
+                                          'Generic',
+                                          style: textTheme.bodyLarge,
+                                        ),
+                                        onPressed: () {
+                                          setModalState(() {
+                                            llmDataModel.isGeneric = true;
+                                          });
+                                        },
+                                      )),
+                                  Padding(
+                                      padding: const EdgeInsets.only(top: 16),
+                                      child: TextButton(
+                                        child: Text(
+                                          'Build-Your-Own',
+                                          style: textTheme.bodyLarge,
+                                        ),
+                                        onPressed: () {
+                                          setModalState(() {
+                                            llmDataModel.isGeneric = false;
+                                          });
+                                        },
+                                      )),
+                                ],
+                              ),
+                              // Select current graph.
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  Center(
+                                      child: Container(
+                                          width: size.width,
+                                          height: size.height * 0.40,
+                                          child: Center(
+                                              child: llmDataModel.isGeneric
+                                                  ? Text("GENERIC",
+                                                      style:
+                                                          textTheme.bodyLarge)
+                                                  : Text("BYO",
+                                                      style: textTheme
+                                                          .bodyLarge))))
+                                ],
+                              ),
+                              // Confirmation buttom
+                              Align(
+                                  alignment: Alignment.bottomRight,
+                                  child: Padding(
+                                      padding: const EdgeInsets.all(8),
+                                      child: Container(
+                                        child: OutlinedButton(
+                                          child: Text(
+                                            'Select',
+                                            style: textTheme.bodyLarge,
+                                          ),
+                                          onPressed: () {
+                                            Navigator.pop(context);
+                                          },
+                                        ),
+                                      ))),
+                            ]));
+                      });
+                    });
+              },
+            ),
             // Text input.
             Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -249,12 +342,13 @@ class _HomePageState extends State<HomePage> {
             Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
+                    width: size.width,
                     child: Text(
-                  "Llama3 can produce inaccurate results. Verify with trusted sources.",
-                  style: textTheme.bodyLarge
-                      ?.copyWith(color: Colors.blueGrey.shade400),
-                  textAlign: TextAlign.start,
-                ))),
+                      "Llama3 can produce inaccurate results. Verify with trusted sources.",
+                      style: textTheme.bodyLarge
+                          ?.copyWith(color: Colors.blueGrey.shade400),
+                      textAlign: TextAlign.start,
+                    ))),
           ],
         );
       }),
@@ -284,7 +378,7 @@ class _HomePageState extends State<HomePage> {
         return size.height * 0.20;
       // Pixel 7 Portrait mode only. Focus on this dimension.
       case <= windowCompactLarge:
-        return size.height * 0.76;
+        return size.height * 0.72;
       default:
         return size.height * 0.35;
     }

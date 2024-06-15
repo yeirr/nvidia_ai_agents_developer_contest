@@ -11,6 +11,7 @@ class LLMModel with ChangeNotifier {
   String _latestResponse = "●";
   late String _llmAIMessage;
   late String _llmHumanMessage;
+  bool _isGeneric = true;
 
   bool get isStreamingText => _isStreamingText;
   bool get isFirstVisit => _isFirstVisit;
@@ -20,6 +21,7 @@ class LLMModel with ChangeNotifier {
   int get humanMessageTimestamp => _humanMessageTimestamp;
   String get llmAIMessage => _llmAIMessage;
   String get llmHumanMessage => _llmHumanMessage;
+  bool get isGeneric => _isGeneric;
 
   set isStreamingText(bool value) {
     _isStreamingText = value;
@@ -58,6 +60,11 @@ class LLMModel with ChangeNotifier {
 
   set llmHumanMessage(String value) {
     _llmHumanMessage = value;
+    notifyListeners();
+  }
+
+  set isGeneric(bool value) {
+    _isGeneric = value;
     notifyListeners();
   }
 }
