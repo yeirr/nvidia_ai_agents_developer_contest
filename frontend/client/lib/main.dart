@@ -14,6 +14,7 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import "package:client/models/state_models.dart";
 import "package:client/configuration_web_mobile.dart";
@@ -185,7 +186,7 @@ class _HomePageState extends State<HomePage> {
                                       padding: const EdgeInsets.only(top: 16),
                                       child: TextButton(
                                         child: Text(
-                                          'Generic',
+                                          '● Generic',
                                           style: textTheme.bodyLarge,
                                         ),
                                         onPressed: () {
@@ -198,7 +199,7 @@ class _HomePageState extends State<HomePage> {
                                       padding: const EdgeInsets.only(top: 16),
                                       child: TextButton(
                                         child: Text(
-                                          'Build-Your-Own',
+                                          '● Build-Your-Own',
                                           style: textTheme.bodyLarge,
                                         ),
                                         onPressed: () {
@@ -215,34 +216,61 @@ class _HomePageState extends State<HomePage> {
                                 children: <Widget>[
                                   Center(
                                       child: Container(
+                                          color: Colors.transparent,
                                           width: size.width,
                                           height: size.height * 0.40,
                                           child: Center(
                                               child: llmDataModel.isGeneric
-                                                  ? Text("GENERIC",
-                                                      style:
-                                                          textTheme.bodyLarge)
-                                                  : Text("BYO",
+                                                  // Load app asset(svg).
+                                                  ? Column(children: <Widget>[
+                                                      Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .all(8),
+                                                          color: Colors
+                                                              .transparent,
+                                                          width: size.width,
+                                                          height:
+                                                              size.height * 0.3,
+                                                          child: SvgPicture.asset(
+                                                              'assets/workflow_transparent_bg.svg')),
+                                                      Align(
+                                                          alignment: Alignment
+                                                              .bottomLeft,
+                                                          child: Padding(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .only(
+                                                                      left: 16,
+                                                                      top: 24),
+                                                              child: Text(
+                                                                  "Default multi-agents workflow.",
+                                                                  style: textTheme
+                                                                      .bodyLarge)))
+                                                    ])
+                                                  : Text("Work-In-Progress",
                                                       style: textTheme
-                                                          .bodyLarge))))
+                                                          .titleLarge))))
                                 ],
                               ),
                               // Confirmation buttom
-                              Align(
-                                  alignment: Alignment.bottomRight,
-                                  child: Padding(
-                                      padding: const EdgeInsets.all(8),
-                                      child: Container(
-                                        child: OutlinedButton(
-                                          child: Text(
-                                            'Select',
-                                            style: textTheme.bodyLarge,
-                                          ),
-                                          onPressed: () {
-                                            Navigator.pop(context);
-                                          },
-                                        ),
-                                      ))),
+                              llmDataModel.isGeneric
+                                  ? Align(
+                                      alignment: Alignment.bottomRight,
+                                      child: Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Container(
+                                            child: OutlinedButton(
+                                              child: Text(
+                                                'Select',
+                                                style: textTheme.bodyLarge,
+                                              ),
+                                              onPressed: () {
+                                                Navigator.pop(context);
+                                              },
+                                            ),
+                                          )))
+                                  : SizedBox.shrink(),
                             ]));
                       });
                     });
@@ -789,6 +817,8 @@ class _HomePageState extends State<HomePage> {
       // Fallback to offline local on-device inference.
     }
   }
+
+  // Render Generic graph.
 }
 
 /// Available web features and APIs.
