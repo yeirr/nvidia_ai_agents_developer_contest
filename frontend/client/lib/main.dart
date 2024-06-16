@@ -218,7 +218,7 @@ class _HomePageState extends State<HomePage> {
                                       child: Container(
                                           color: Colors.transparent,
                                           width: size.width,
-                                          height: size.height * 0.40,
+                                          height: size.height * 0.42,
                                           child: Center(
                                               child: llmDataModel.isGeneric
                                                   // Load app asset(svg).
@@ -230,13 +230,18 @@ class _HomePageState extends State<HomePage> {
                                                           color: Colors
                                                               .transparent,
                                                           width: size.width,
-                                                          height:
-                                                              size.height * 0.3,
-                                                          child: SvgPicture.asset(
-                                                              width: size.width,
-                                                              semanticsLabel:
-                                                                  "workflow diagram",
-                                                              'assets/workflow_transparent_bg.svg')),
+                                                          height: size.height *
+                                                              0.38,
+                                                          child:
+                                                              Transform.scale(
+                                                                  scale: 0.99,
+                                                                  child:
+                                                                      SvgPicture
+                                                                          .asset(
+                                                                    'assets/workflow_transparent_bg.svg',
+                                                                    width: size
+                                                                        .width,
+                                                                  ))),
                                                       Align(
                                                           alignment: Alignment
                                                               .bottomLeft,
@@ -245,7 +250,7 @@ class _HomePageState extends State<HomePage> {
                                                                   const EdgeInsets
                                                                       .only(
                                                                       left: 16,
-                                                                      top: 24),
+                                                                      top: 8),
                                                               child: Text(
                                                                   "Default multi-agents workflow.",
                                                                   style: textTheme
