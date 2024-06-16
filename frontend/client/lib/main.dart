@@ -233,6 +233,9 @@ class _HomePageState extends State<HomePage> {
                                                           height:
                                                               size.height * 0.3,
                                                           child: SvgPicture.asset(
+                                                              width: size.width,
+                                                              semanticsLabel:
+                                                                  "workflow diagram",
                                                               'assets/workflow_transparent_bg.svg')),
                                                       Align(
                                                           alignment: Alignment

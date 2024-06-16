@@ -5,7 +5,6 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Union
 
-from IPython.display import Image, display
 from langchain.globals import set_debug, set_verbose
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import (
@@ -202,13 +201,7 @@ graph = workflow.compile(checkpointer=checkpointer)
 
 # Sanity checks by visualizing graph(with nested structures) and running warmup inference.
 def sanity_check() -> None:
-    display(
-        Image(
-            graph.get_graph(xray=True).draw_mermaid_png(
-                output_file_path="/tmp/llm_workflow.png"
-            )
-        )
-    )
+    graph.get_graph(xray=True).draw_png(output_file_path="/tmp/workflow.png")
     uid = str(uuid.uuid4())
     thread_id = str(uuid.uuid4())
     query = "code hello world in python and print to terminal"
