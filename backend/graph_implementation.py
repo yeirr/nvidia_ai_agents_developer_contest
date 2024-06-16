@@ -80,14 +80,21 @@ def create_agent(llm: ChatOpenAI, tools: List[Any], system_message: str) -> Any:
 # Leader node.
 leader_prompt = PromptTemplate(
     template="""You are an expert at routing a user query to a specialist.
-    Use researcher for generic queries.
-    Use programmer for programming queries.
+    Use biology for biological related queries.
+    Use physiology for physiological related queries.
+    Use math for math related queries.
+    Use engineer for engineering related queries.
+    Use psychology for psychology related queries.
     Given a binary choice of 'next', 'FINISH' based on the query. 
 
     Examples:
 
     ```python
-    {\"supervisor\": {\"next\": \"researcher\"}}
+    {\"supervisor\": {\"next\": \"biology\"}}
+    {\"supervisor\": {\"next\": \"physiology\"}}
+    {\"supervisor\": {\"next\": \"math\"}}
+    {\"supervisor\": {\"next\": \"engineer\"}}
+    {\"supervisor\": {\"next\": \"psychology\"}}
     {\"supervisor\": {\"next": \"FINISH\"}}
     ```
     Return the a JSON with a single key 'supervisor', a nested key 'next' and no premable or explanation. Query to route: {messages} """,
@@ -97,32 +104,80 @@ leader_prompt = PromptTemplate(
 leader_agent = create_agent(llm=agent, tools=[], system_message=leader_prompt.template)
 
 
-# Researcher node.
-researcher_prompt = PromptTemplate(
-    template="""You are an expert researcher in finding articles, news and the
-    latest information pertaining to the following:
+# Biology node.
+biology_prompt = PromptTemplate(
+    template="""You adopt the persona of Charles Robert Darwin, a English naturalist,
+    geologist and biologist. You are also up-to-date with the entire biology field, the
+    scientific study of life. You are able to study life at multiple levels of
+    organization, from the molecular biology of a cell to the anatomy and physiology of
+    plants and animals, and evolution of populations. You are an expert at utilizing the
+    scientific method to make observations, pose questions generate hypotheses, perform
+    experiments, and form conclusions about the world around them.
+
+    Answer the following queries in his tone and personality:
     {messages}
     """,
     input_variables=["messages"],
 )
 
-researcher_agent = create_agent(
-    llm=agent, tools=[], system_message=researcher_prompt.template
+biology_agent = create_agent(
+    llm=agent, tools=[], system_message=biology_prompt.template
 )
 
-# Programming node.
-#
-# THIS PERFORMS ARBITRARY CODE EXECUTION. PROCEED WITH CAUTION.
-programmer_prompt = PromptTemplate(
-    template="""You are an expert programmer who excels in solving programming problems
-    pertaining to the following: 
+# Physiology node.
+physiology_prompt = PromptTemplate(
+    template="""You adopt the persona of Claude Bernard, a French physiologist known for
+    his work on the concept of homeostasis.
+
+    Answer the following queries in his tone and personality:
     {messages}
     """,
     input_variables=["messages"],
 )
 
-programmer_agent = create_agent(
-    llm=agent, tools=[], system_message=programmer_prompt.template
+physiology_agent = create_agent(
+    llm=agent, tools=[], system_message=physiology_prompt.template
+)
+
+# Math node.
+math_prompt = PromptTemplate(
+    template="""You adopt the persona of Leonhard Euler, a mathematician, physicist,
+    astronomer, geographer, logician and engineer.
+
+    Answer the following queries in his tone and personality:
+    {messages}
+    """,
+    input_variables=["messages"],
+)
+math_agent = create_agent(llm=agent, tools=[], system_message=math_prompt.template)
+
+# Engineer node.
+engineer_prompt = PromptTemplate(
+    template="""You adopt the persona of Leonardo di ser Piero da Vinci, n Italian
+    polymath of the High Renaissance who was active as a painter, draughtsman, engineer,
+    scientist, theorist, sculptor, and architect. 
+
+    Answer the following queries in his tone and personality:
+    {messages}
+    """,
+    input_variables=["messages"],
+)
+engineer_agent = create_agent(
+    llm=agent, tools=[], system_message=engineer_prompt.template
+)
+
+# Psychology node.
+psychology_prompt = PromptTemplate(
+    template="""You adopt the persona of Wilhelm Maximilian Wundt, a German
+    physiologist, philosopher, and professor, one of the fathers of modern psychology.
+
+    Answer the following queries in his tone and personality:
+    {messages}
+    """,
+    input_variables=["messages"],
+)
+psychology_agent = create_agent(
+    llm=agent, tools=[], system_message=psychology_prompt.template
 )
 
 
@@ -140,17 +195,38 @@ def call_leader_node(
     return {"messages": [response]}
 
 
-def call_researcher_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+def call_biology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"RESEARCHER_NODE_INPUT: {query}")
-    response = researcher_agent.invoke({"messages": [HumanMessage(content=query)]})
+    print(f"BIOLOGY_NODE_INPUT: {query}")
+    response = biology_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
-def call_programmer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+def call_physiology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"PROGRAMMER_NODE_INPUT: {query}")
-    response = programmer_agent.invoke({"messages": [HumanMessage(content=query)]})
+    print(f"PHYSIOLOGY_NODE_INPUT: {query}")
+    response = physiology_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
+
+
+def call_math_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    query = config["configurable"]["query"]
+    print(f"MATH_NODE_INPUT: {query}")
+    response = math_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
+
+
+def call_engineer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    query = config["configurable"]["query"]
+    print(f"ENGINEER_NODE_INPUT: {query}")
+    response = engineer_agent.invoke({"messages": [HumanMessage(content=query)]})
+    return {"messages": [AIMessage(content=response.content)]}
+
+
+def call_psychology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
+    query = config["configurable"]["query"]
+    print(f"PSYCHOLOGY_NODE_INPUT: {query}")
+    response = psychology_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
@@ -170,12 +246,21 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
     last_message = str(messages[-1].content)  # Target AIMessage
     print(f"ROUTE_QUERY_INPUT: {last_message}")
     route = json.loads(last_message)
-    if route["supervisor"]["next"] == "researcher":
-        print("---ROUTE QUERY TO RESEARCHER---")
-        return "researcher"
-    elif route["supervisor"]["next"] == "programmer":
-        print("---ROUTE QUERY TO PROGRAMMER---")
-        return "programmer"
+    if route["supervisor"]["next"] == "biology":
+        print("---ROUTE QUERY TO BIOLOGY NODE---")
+        return "biology"
+    elif route["supervisor"]["next"] == "physiology":
+        print("---ROUTE QUERY TO PHYSIOLOGY NODE---")
+        return "physiology"
+    elif route["supervisor"]["next"] == "math":
+        print("---ROUTE QUERY TO MATH NODE---")
+        return "math"
+    elif route["supervisor"]["next"] == "engineer":
+        print("---ROUTE QUERY TO ENGINEER NODE---")
+        return "engineer"
+    elif route["supervisor"]["next"] == "psychology":
+        print("---ROUTE QUERY TO PSYCHOLOGY NODE---")
+        return "psychology"
     elif route["supervisor"]["next"] == "FINISH":
         return "FINISH"
 
@@ -183,18 +268,31 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
 # Compile workflow graph.
 workflow = StateGraph(GraphState)
 workflow.add_node("leader", call_leader_node)
-workflow.add_node("researcher", call_researcher_node)
-workflow.add_node("programmer", call_programmer_node)
+workflow.add_node("biology", call_biology_node)
+workflow.add_node("physiology", call_physiology_node)
+workflow.add_node("math", call_math_node)
+workflow.add_node("engineer", call_engineer_node)
+workflow.add_node("psychology", call_psychology_node)
 
 # Build graph.
 workflow.set_entry_point("leader")
 workflow.add_conditional_edges(
     "leader",
     route_query,
-    {"FINISH": END, "researcher": "researcher", "programmer": "programmer"},
+    {
+        "FINISH": END,
+        "biology": "biology",
+        "physiology": "physiology",
+        "math": "math",
+        "engineer": "engineer",
+        "psychology": "psychology",
+    },
 )
-workflow.add_edge("researcher", END)
-workflow.add_edge("programmer", END)
+workflow.add_edge("biology", END)
+workflow.add_edge("physiology", END)
+workflow.add_edge("math", END)
+workflow.add_edge("engineer", END)
+workflow.add_edge("psychology", END)
 checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
@@ -204,7 +302,7 @@ def sanity_check() -> None:
     graph.get_graph(xray=True).draw_png(output_file_path="/tmp/workflow.png")
     uid = str(uuid.uuid4())
     thread_id = str(uuid.uuid4())
-    query = "code hello world in python and print to terminal"
+    query = "can you explain basic psychology concepts to a five year old?"
     config: RunnableConfig = {
         "recursion_limit": 150,
         "configurable": {

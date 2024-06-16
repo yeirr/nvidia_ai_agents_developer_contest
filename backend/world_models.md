@@ -12,18 +12,19 @@ sub-networks and using the final representation as a checklist.
 
 In order of reliability.
 
-* arithmetic
+* arithmetic "Leonhard Euler"
 * language
 * statistics
 * calculus
 * science(physics)
 * science(thermophysics)
 * science(chemistry)
-* science(biology)
+* science(biology) "Charles Darwin"
 * science(quantum mechanics)
 * systems engineering
-* engineering
-* human physiology
+* engineering "Leonardo di ser Piero da Vinc"
+* human physiology "Claude Bernard"
+* human psychology(experimental) "Wilhelm Maximilian Wundt"
 * human psychology(motivation)
 * human psychology(intent)
 * human psychology(misjudgement)
