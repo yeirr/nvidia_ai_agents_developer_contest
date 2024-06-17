@@ -812,9 +812,6 @@ class _HomePageState extends State<HomePage> {
               content: jsonDecode(response_json_text)['data']['ai_message'],
               id: DateTime.now().millisecondsSinceEpoch.toString()));
 
-          print('MESSAGES_LENGTH:${messages.length}');
-          print('MESSAGES_ORDER:${messages}');
-
           // Persist entire conversation history to local storage.
           encryptedChatHistoryBox.put(
               jsonDecode(response_json_text)['data']['thread_id'],

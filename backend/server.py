@@ -31,7 +31,7 @@ origins = [
 ]
 # For daily builds and staging.
 origin_regex = re.compile(
-    r"(^https:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.(carrd.co|web.app|firebaseapp.com|a.run.app){1,}\b$)"
+    r"(^https:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.(web.app|firebaseapp.com|a.run.app){1,}\b$)"
 )
 
 middleware: list[Middleware] = [

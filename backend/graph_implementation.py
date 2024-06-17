@@ -1,8 +1,6 @@
 import json
 import uuid
 from datetime import datetime
-from json import JSONDecodeError
-from pathlib import Path
 from typing import Annotated, Any, Dict, List, Union
 
 from langchain.globals import set_debug, set_verbose
@@ -22,21 +20,6 @@ from langgraph.graph.message import AnyMessage, add_messages
 set_debug(False)
 set_verbose(True)
 
-# Done: vanilla langgraph react agent
-# Done: tools node with collection of tools
-# TODO: main langgraph agent loop(retrieval, reflection, human-in-the-loop)
-# TODO: specialized multi-agents(math,sci,law,biz)
-# TODO: combination of SLMs(phi3-mini-4k), LLMs(llama3-8b), LMMs(llama3-70b)
-#
-# Accelerate multi-step problem-solving with a single generalist and multiple specialists.
-# TODO: formulate problem and solution space
-# TODO: track reasoning traces throughout the problem solving cycle
-# TODO: eliminate logic flaws and implicit biases
-# TODO: adopt historical personas(scientist, engineer, philosophers, leaders, educators)
-# TODO: productivity goals and agent loop(research, assess, plan, action, evaluate, visualize, share)
-# TODO: encourage problem-solvers to be novel problem seekers and think flexibly about the approach
-
-
 # Supported text models on NGC NIM endpoint.
 # * "meta/llama3-8b-instruct"
 # * "meta/llama3-70b-instruct"
@@ -49,7 +32,7 @@ agent = ChatOpenAI(
     model=model,
     temperature=0.1,
     max_tokens=1024,
-    api_key=Path("/home/yeirr/secret/ngc_personal_key.txt").read_text().strip("\n"),
+    api_key="<INSERT API KEYS>",
 )
 
 
@@ -190,42 +173,36 @@ def call_leader_node(
     state: GraphState, config: RunnableConfig
 ) -> Union[Dict[str, Any], str]:
     query = config["configurable"]["query"]
-    print(f"LEADER_NODE_INPUT: {query}")
     response = leader_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [response]}
 
 
 def call_biology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"BIOLOGY_NODE_INPUT: {query}")
     response = biology_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_physiology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"PHYSIOLOGY_NODE_INPUT: {query}")
     response = physiology_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_math_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"MATH_NODE_INPUT: {query}")
     response = math_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_engineer_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"ENGINEER_NODE_INPUT: {query}")
     response = engineer_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
 
 def call_psychology_node(state: GraphState, config: RunnableConfig) -> Dict[str, Any]:
     query = config["configurable"]["query"]
-    print(f"PSYCHOLOGY_NODE_INPUT: {query}")
     response = psychology_agent.invoke({"messages": [HumanMessage(content=query)]})
     return {"messages": [AIMessage(content=response.content)]}
 
@@ -244,22 +221,16 @@ def route_query(state: GraphState, config: RunnableConfig) -> str:
 
     messages = state.messages
     last_message = str(messages[-1].content)  # Target AIMessage
-    print(f"ROUTE_QUERY_INPUT: {last_message}")
     route = json.loads(last_message)
     if route["supervisor"]["next"] == "biology":
-        print("---ROUTE QUERY TO BIOLOGY NODE---")
         return "biology"
     elif route["supervisor"]["next"] == "physiology":
-        print("---ROUTE QUERY TO PHYSIOLOGY NODE---")
         return "physiology"
     elif route["supervisor"]["next"] == "math":
-        print("---ROUTE QUERY TO MATH NODE---")
         return "math"
     elif route["supervisor"]["next"] == "engineer":
-        print("---ROUTE QUERY TO ENGINEER NODE---")
         return "engineer"
     elif route["supervisor"]["next"] == "psychology":
-        print("---ROUTE QUERY TO PSYCHOLOGY NODE---")
         return "psychology"
     elif route["supervisor"]["next"] == "FINISH":
         return "FINISH"
