@@ -5,12 +5,11 @@ commands.
 
 ## Frontend
 
-cd frontend/client
-bash scripts/run_web.sh -r
-
-Open web browser(Chrome mobile) and navigate to "http://localhost:8000"
+* cd frontend/client
+* bash scripts/run_web.sh -r
+* open web browser(Chrome mobile) and navigate to "http://localhost:8000"
 
 ## Backend
 
-cd backend
-fastapi dev server.py --port 8080
+* cd backend
+* fastapi dev server.py --port 8080
