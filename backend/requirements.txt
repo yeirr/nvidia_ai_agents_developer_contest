@@ -83,7 +83,7 @@ kiwisolver==1.4.5
 langchain==0.2.3
 langchain-community==0.2.4
 langchain-core==0.2.5
-langchain-experimental==0.0.60
+langchain-experimental==0.0.61
 langchain-nvidia-ai-endpoints==0.1.1
 langchain-openai==0.1.8
 langchain-text-splitters==0.2.1
