@@ -81,7 +81,7 @@ jupyterlab_pygments==0.3.0
 jupyterlab_widgets==3.0.10
 kiwisolver==1.4.5
 langchain==0.2.3
-langchain-community==0.2.4
+langchain-community==0.2.5
 langchain-core==0.2.5
 langchain-experimental==0.0.60
 langchain-nvidia-ai-endpoints==0.1.1
