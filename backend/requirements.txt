@@ -16,7 +16,7 @@ bleach==6.1.0
 Brotli==1.1.0
 cachetools==5.3.3
 cattrs==23.2.3
-certifi==2024.6.2
+certifi==2024.7.4
 cffi==1.16.0
 chardet==5.2.0
 charset-normalizer==3.3.2
